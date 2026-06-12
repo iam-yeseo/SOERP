@@ -192,7 +192,7 @@ WM.createSampleTasks = function () {
   return [
     { id: WM.uid(), title: "래미안베라힐즈 입찰하기", category: "bid", status: "inProgress", priority: "high",
       siteName: "래미안베라힐즈", requester: "김용준 부장님", dueDate: WM.addDays(1),
-      memo: "나라장터 공고 기준. 현장설명회 참석 여부 확인 필요.",
+      comments: [{ id: WM.uid(), text: "나라장터 공고 기준. 현장설명회 참석 여부 확인 필요.", createdAt: now }],
       checklist: fromTemplate("bid", 7, 3), attachments: [], createdAt: now, updatedAt: now },
     { id: WM.uid(), title: "신촌산수빌 중도금 계산서 발행", category: "accounting", status: "todo", priority: "urgent",
       siteName: "신촌산수빌", amount: 2000000, dueDate: WM.todayStr(),

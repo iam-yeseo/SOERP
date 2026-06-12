@@ -41,7 +41,8 @@ var ICONS = {
   inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   trending: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
-  xcircle: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>'
+  xcircle: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>'
 };
 
 /** 아이콘 SVG 문자열 */
@@ -108,6 +109,12 @@ WM.confirmDialog = function (opts, onConfirm) {
     close();
     onConfirm();
   });
+};
+
+/* ---- 로딩 상태 ---- */
+WM.renderLoading = function (text) {
+  return '<div class="loading-wrap"><span class="spinner" aria-hidden="true"></span>' +
+    '<p>' + WM.esc(text || "불러오는 중...") + "</p></div>";
 };
 
 /* ---- 빈 상태 ---- */

@@ -12,11 +12,22 @@ WM.DEFAULT_TEMPLATES = [
       "결격심사 서류 확인", "대리인 서류 확인", "입찰 금액 확인", "제출 완료", "결과 확인"]
   },
   {
-    id: "tpl-contract", category: "contract", name: "계약 업무 템플릿",
-    description: "낙찰 후 계약 체결과 청구 일정 등록까지",
-    items: ["낙찰/계약 대상 확인", "관리사무소 또는 담당자 연락", "계약 금액 확인", "부가세 포함 여부 확인",
-      "지급조건 확인", "계약서 초안 작성", "계약보증서 발급", "하자보증서 필요 여부 확인",
-      "계약서 송부", "중도금/잔금 청구 일정 등록"]
+    id: "tpl-award", category: "contract", name: "낙찰 업무 템플릿",
+    description: "낙찰 확인부터 계약서 초안 작성까지",
+    items: ["낙찰 확인", "관리사무소 전화 및 계산서 수령 (1억 이상 공사시 회장님 성함 및 생년월일 체크)",
+      "계약서 초안 작성"]
+  },
+  {
+    id: "tpl-start", category: "contract", name: "착공 업무 템플릿",
+    description: "착공 시 일자·서류·담당자 확인",
+    items: ["착공일자 체크", "계약서 원본 체크", "계산서 및 계약보증서 발행일 확인",
+      "현장대리인 체크", "원본 전달 / 메일 송부 체크"]
+  },
+  {
+    id: "tpl-completion", category: "contract", name: "준공 업무 템플릿",
+    description: "준공 시 일자·기성금·서류 확인",
+    items: ["준공일자 체크", "잔여 기성금 체크", "계산서 및 하자보증서 발행일 확인",
+      "원본 전달 / 메일 송부 체크"]
   },
   {
     id: "tpl-guarantee", category: "guarantee", name: "보증서 업무 템플릿",
@@ -69,7 +80,19 @@ WM.loadTemplates = function () {
       t.items = t.items.filter(function (i) { return typeof i === "string"; });
       return t;
     });
-    return valid.length ? valid : deepCopyDefaults();
+    if (!valid.length) return deepCopyDefaults();
+
+    // 마이그레이션: 구버전 '계약 업무 템플릿'(tpl-contract)을 낙찰/착공/준공 3종으로 분리
+    var oldIdx = valid.findIndex(function (t) { return t.id === "tpl-contract"; });
+    if (oldIdx !== -1) {
+      var three = WM.DEFAULT_TEMPLATES.filter(function (t) {
+        return t.id === "tpl-award" || t.id === "tpl-start" || t.id === "tpl-completion";
+      }).map(function (t) { return JSON.parse(JSON.stringify(t)); });
+      valid.splice.apply(valid, [oldIdx, 1].concat(three));
+      try { localStorage.setItem(WM.TEMPLATE_STORAGE_KEY, JSON.stringify(valid)); } catch (e2) { /* 무시 */ }
+    }
+
+    return valid;
   } catch (e) {
     console.error("템플릿 데이터를 읽지 못했습니다.", e);
     return deepCopyDefaults();
@@ -91,8 +114,33 @@ WM.getTemplateByCategory = function (category) {
   return WM.CHECKLIST_TEMPLATES.find(function (t) { return t.category === category; });
 };
 
+/** 카테고리에 속한 템플릿 전체 (한 카테고리에 여러 템플릿 허용) */
+WM.getTemplatesByCategory = function (category) {
+  return WM.CHECKLIST_TEMPLATES.filter(function (t) { return t.category === category; });
+};
+
 WM.getTemplateById = function (id) {
   return WM.CHECKLIST_TEMPLATES.find(function (t) { return t.id === id; });
+};
+
+/** 사용자 정의 템플릿 추가 */
+WM.addTemplate = function (category, name, description) {
+  var tpl = {
+    id: "tpl-" + WM.uid(),
+    category: category,
+    name: name,
+    description: description || "",
+    items: []
+  };
+  WM.CHECKLIST_TEMPLATES.push(tpl);
+  WM.saveTemplates();
+  return tpl;
+};
+
+/** 템플릿 삭제 */
+WM.deleteTemplate = function (id) {
+  WM.CHECKLIST_TEMPLATES = WM.CHECKLIST_TEMPLATES.filter(function (t) { return t.id !== id; });
+  WM.saveTemplates();
 };
 
 /** 템플릿 → 체크리스트 항목 배열 */

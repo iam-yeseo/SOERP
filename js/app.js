@@ -2,6 +2,7 @@
 (function () {
   var App = {
     tasks: [],
+    ready: false,        // Supabase에서 첫 데이터를 불러왔는지
     filter: Object.assign({}, WM.DEFAULT_FILTER),
     sort: "dueDate",
     view: "card",
@@ -12,23 +13,32 @@
   };
   WM.App = App;
 
-  /* ---- 데이터 변경 헬퍼 ---- */
-  function persist() { WM.saveTasks(App.tasks); }
+  /* ---- 데이터 변경 헬퍼 (Supabase 서버 우선) ---- */
 
-  function updateTask(id, patch) {
-    patch = Object.assign({}, patch, { updatedAt: new Date().toISOString() });
-    App.tasks = App.tasks.map(function (t) {
-      if (t.id !== id) return t;
-      var next = Object.assign({}, t, patch);
-      // patch에 명시적으로 undefined가 들어온 키는 제거 (completedAt 해제)
-      Object.keys(patch).forEach(function (k) { if (patch[k] === undefined) delete next[k]; });
-      return next;
-    });
-    persist();
+  /** localStorage 백업 미러 (오프라인 참고용) */
+  function backup() { WM.saveTasks(App.tasks); }
+
+  /** 서버 저장 결과를 로컬 상태에 반영 */
+  function applySaved(saved) {
+    App.tasks = App.tasks.map(function (t) { return t.id === saved.id ? saved : t; });
+    backup();
   }
 
-  function setStatus(id, status) {
-    updateTask(id, WM.statusChangePatch(status));
+  /** 서버에 patch 저장 후 성공 시 로컬 반영. 실패 시 false 반환 (화면 변경 없음) */
+  async function updateTask(id, patch) {
+    try {
+      var saved = await WM.api.updateTask(id, patch);
+      applySaved(saved);
+      return true;
+    } catch (e) {
+      console.error("업무 저장 실패", e);
+      WM.toast("저장에 실패했습니다. 네트워크를 확인해주세요.", "error");
+      return false;
+    }
+  }
+
+  async function setStatus(id, status) {
+    return updateTask(id, WM.statusChangePatch(status));
   }
 
   function getTask(id) {
@@ -45,6 +55,14 @@
   function render() {
     var r = route();
     var view = document.getElementById("view");
+
+    // 첫 데이터 로딩 전에는 로딩 화면 유지
+    if (!App.ready) {
+      view.innerHTML = WM.renderLoading("업무 데이터를 불러오는 중...");
+      renderNav(r.page);
+      return;
+    }
+
     App.clEditing = null;
 
     if (r.page === "dashboard" || r.page === "") {
@@ -227,7 +245,7 @@
     if (el) el.innerHTML = WM.checklistHtml(App.form.values.checklist, "form", App.clEditing);
   }
 
-  function submitForm() {
+  async function submitForm() {
     var v = App.form.values;
     if (!v.title || !v.title.trim()) {
       var err = document.getElementById("f-title-error");
@@ -240,33 +258,48 @@
       }
       return;
     }
-    // 빈 문자열 옵션 필드 정리
+    // 빈 문자열 옵션 필드 정리 (undefined로 두면 서버에서 해당 필드를 비움)
     var clean = Object.assign({}, v, { title: v.title.trim() });
     ["requester", "siteName", "clientName", "date", "dueDate", "confirmationNote"].forEach(function (k) {
       if (typeof clean[k] === "string") {
         clean[k] = clean[k].trim();
-        if (!clean[k]) delete clean[k];
+        if (!clean[k]) clean[k] = undefined;
       }
     });
-    if (clean.amount == null) delete clean.amount;
+    if (clean.amount == null) clean.amount = undefined;
 
-    var now = new Date().toISOString();
-    if (App.form.editId) {
+    // 저장 중 버튼 비활성화
+    var isEdit = !!App.form.editId;
+    var submitBtn = document.querySelector("[data-action='form-submit']");
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "저장 중..."; }
+    function restoreBtn() {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isEdit ? "수정 저장" : "업무 등록"; }
+    }
+
+    if (isEdit) {
       var prev = getTask(App.form.editId);
       var patch = clean;
       if (prev && prev.status !== clean.status) {
         patch = Object.assign({}, clean, WM.statusChangePatch(clean.status));
       }
       delete patch.id; delete patch.createdAt; delete patch.updatedAt;
-      updateTask(App.form.editId, patch);
+      var ok = await updateTask(App.form.editId, patch);
+      if (!ok) { restoreBtn(); return; }
       WM.toast("업무가 수정되었습니다.");
     } else {
-      var task = Object.assign({ id: WM.uid(), createdAt: now, updatedAt: now }, clean);
-      if (!task.checklist) task.checklist = [];
-      if (!task.comments) task.comments = [];
-      App.tasks.unshift(task);
-      persist();
-      WM.toast("업무가 등록되었습니다.");
+      try {
+        if (!clean.checklist) clean.checklist = [];
+        if (!clean.comments) clean.comments = [];
+        var saved = await WM.api.createTask(clean);
+        App.tasks.unshift(saved);
+        backup();
+        WM.toast("업무가 등록되었습니다.");
+      } catch (e) {
+        console.error("업무 등록 실패", e);
+        WM.toast("등록에 실패했습니다. 네트워크를 확인해주세요.", "error");
+        restoreBtn();
+        return;
+      }
     }
     closeForm();
     rerenderCurrent();
@@ -286,8 +319,19 @@
       repaintFormChecklist();
     } else {
       var r = route();
-      updateTask(r.id, { checklist: list });
-      rerenderKeepScroll(); // 상세 화면 진행률 포함 갱신 (스크롤 유지)
+      var t = getTask(r.id);
+      if (!t) return;
+      // 낙관적 반영 (체크 반응을 즉시) → 실패 시 롤백
+      var prevList = t.checklist;
+      t.checklist = list;
+      rerenderKeepScroll();
+      WM.api.updateTaskChecklist(r.id, list).then(applySaved).catch(function (e) {
+        console.error("체크리스트 저장 실패", e);
+        var cur = getTask(r.id);
+        if (cur) cur.checklist = prevList;
+        rerenderKeepScroll();
+        WM.toast("체크리스트 저장에 실패했습니다.", "error");
+      });
     }
   }
 
@@ -359,10 +403,20 @@
           description: validated.length + "건의 업무를 가져옵니다.\n기존 데이터는 덮어쓰기됩니다.",
           confirmLabel: "가져오기"
         }, function () {
-          App.tasks = validated;
-          persist();
-          WM.toast(validated.length + "건의 업무를 가져왔습니다.");
-          rerenderCurrent();
+          WM.toast("가져오는 중입니다...");
+          WM.api.deleteAllTasks().then(function () {
+            return WM.api.bulkInsertTasks(validated);
+          }).then(function () {
+            return WM.api.getTasks();
+          }).then(function (tasks) {
+            App.tasks = tasks;
+            backup();
+            WM.toast(tasks.length + "건의 업무를 가져왔습니다.");
+            rerenderCurrent();
+          }).catch(function (err) {
+            console.error("가져오기 실패", err);
+            WM.toast("가져오기에 실패했습니다. 네트워크를 확인해주세요.", "error");
+          });
         });
       };
       reader.onerror = function () { WM.toast("파일을 읽지 못했습니다.", "error"); };
@@ -391,9 +445,10 @@
     } else if (act === "edit-task") {
       openForm(id);
     } else if (act === "complete-task") {
-      setStatus(id, "done");
-      WM.toast("완료 처리되었습니다.");
-      rerenderKeepScroll();
+      setStatus(id, "done").then(function (ok) {
+        if (ok) WM.toast("완료 처리되었습니다.");
+        rerenderKeepScroll();
+      });
     } else if (act === "delete-task" || act === "delete-task-detail") {
       e.stopPropagation();
       var t = getTask(id);
@@ -403,11 +458,16 @@
         description: '"' + t.title + '"\n삭제한 업무는 복구할 수 없습니다.',
         confirmLabel: "삭제", danger: true
       }, function () {
-        App.tasks = App.tasks.filter(function (x) { return x.id !== id; });
-        persist();
-        WM.toast("업무가 삭제되었습니다.");
-        if (act === "delete-task-detail") location.hash = "#/tasks";
-        else render();
+        WM.api.deleteTask(id).then(function () {
+          App.tasks = App.tasks.filter(function (x) { return x.id !== id; });
+          backup();
+          WM.toast("업무가 삭제되었습니다.");
+          if (act === "delete-task-detail") location.hash = "#/tasks";
+          else rerenderKeepScroll();
+        }).catch(function (err) {
+          console.error("업무 삭제 실패", err);
+          WM.toast("삭제에 실패했습니다. 네트워크를 확인해주세요.", "error");
+        });
       });
     } else if (act === "back") {
       if (history.length > 1) history.back();
@@ -417,7 +477,7 @@
     } else if (act === "form-submit") {
       submitForm();
     } else if (act === "tpl-apply") {
-      var tplObj = WM.getTemplateByCategory(App.form.values.category);
+      var tplObj = el.dataset.tplid ? WM.getTemplateById(el.dataset.tplid) : WM.getTemplateByCategory(App.form.values.category);
       if (!tplObj) return;
       if (App.form.values.checklist.length > 0) {
         WM.confirmDialog({
@@ -496,6 +556,55 @@
       rerenderKeepScroll();
       var tplAgain = document.querySelector("[data-tpl-add-input][data-id='" + id + "']");
       if (tplAgain) tplAgain.focus();
+    } else if (act === "tpl-create") {
+      var newName = document.getElementById("new-tpl-name");
+      var newCat = document.getElementById("new-tpl-category");
+      var newDesc = document.getElementById("new-tpl-desc");
+      if (!newName || !newName.value.trim()) {
+        if (newName) {
+          newName.focus();
+          newName.classList.add("shake");
+          setTimeout(function () { newName.classList.remove("shake"); }, 350);
+        }
+        return;
+      }
+      WM.addTemplate(newCat ? newCat.value : "etc", newName.value.trim(), newDesc ? newDesc.value.trim() : "");
+      WM.toast("새 템플릿이 추가되었습니다. 항목을 추가해보세요.");
+      rerenderKeepScroll();
+    } else if (act === "tpl-delete") {
+      var tplToDel = WM.getTemplateById(id);
+      if (!tplToDel) return;
+      WM.confirmDialog({
+        title: "템플릿을 삭제할까요?",
+        description: '"' + tplToDel.name + '"\n삭제한 템플릿은 복구할 수 없습니다. (기본 템플릿은 \'기본 템플릿 복원\'으로 다시 추가할 수 있습니다)',
+        confirmLabel: "삭제", danger: true
+      }, function () {
+        WM.deleteTemplate(id);
+        App.tplEdit = null;
+        WM.toast("템플릿이 삭제되었습니다.");
+        rerenderKeepScroll();
+      });
+    } else if (act === "tpl-restore-defaults") {
+      WM.confirmDialog({
+        title: "기본 템플릿을 복원할까요?",
+        description: "삭제된 기본 템플릿을 다시 추가합니다. 사용자가 만든 템플릿과 수정한 내용은 그대로 유지됩니다.",
+        confirmLabel: "복원"
+      }, function () {
+        var added = 0;
+        WM.DEFAULT_TEMPLATES.forEach(function (def) {
+          if (!WM.getTemplateById(def.id)) {
+            WM.CHECKLIST_TEMPLATES.push(JSON.parse(JSON.stringify(def)));
+            added++;
+          }
+        });
+        if (added) {
+          WM.saveTemplates();
+          WM.toast("기본 템플릿 " + added + "종을 복원했습니다.");
+          rerenderKeepScroll();
+        } else {
+          WM.toast("모든 기본 템플릿이 이미 있습니다.");
+        }
+      });
     } else if (act === "tpl-restore") {
       WM.confirmDialog({
         title: "기본 템플릿으로 복원할까요?",
@@ -530,10 +639,15 @@
         description: "저장된 업무가 모두 삭제됩니다. 필요하면 먼저 JSON 내보내기로 백업하세요.",
         confirmLabel: "초기화", danger: true
       }, function () {
-        App.tasks = [];
-        persist();
-        WM.toast("모든 업무 데이터가 초기화되었습니다.");
-        rerenderCurrent();
+        WM.api.deleteAllTasks().then(function () {
+          App.tasks = [];
+          backup();
+          WM.toast("모든 업무 데이터가 초기화되었습니다.");
+          rerenderCurrent();
+        }).catch(function (err) {
+          console.error("초기화 실패", err);
+          WM.toast("초기화에 실패했습니다. 네트워크를 확인해주세요.", "error");
+        });
       });
     } else if (act === "sample") {
       WM.confirmDialog({
@@ -541,10 +655,20 @@
         description: "기존 데이터가 샘플 업무로 대체됩니다.",
         confirmLabel: "생성"
       }, function () {
-        App.tasks = WM.createSampleTasks();
-        persist();
-        WM.toast("샘플 데이터를 생성했습니다.");
-        rerenderCurrent();
+        WM.toast("샘플 데이터를 생성 중입니다...");
+        WM.api.deleteAllTasks().then(function () {
+          return WM.api.bulkInsertTasks(WM.createSampleTasks());
+        }).then(function () {
+          return WM.api.getTasks();
+        }).then(function (tasks) {
+          App.tasks = tasks;
+          backup();
+          WM.toast("샘플 데이터를 생성했습니다.");
+          rerenderCurrent();
+        }).catch(function (err) {
+          console.error("샘플 생성 실패", err);
+          WM.toast("샘플 생성에 실패했습니다. 네트워크를 확인해주세요.", "error");
+        });
       });
     } else if (act === "comment-add") {
       var cmtInput = document.getElementById("comment-input");
@@ -552,13 +676,17 @@
       if (!cmtText) { if (cmtInput) cmtInput.focus(); return; }
       var cmtTask = getTask(id);
       if (!cmtTask) return;
+      el.disabled = true;
       updateTask(id, {
         comments: (cmtTask.comments || []).concat([{ id: WM.uid(), text: cmtText, createdAt: new Date().toISOString() }])
+      }).then(function (ok) {
+        el.disabled = false;
+        if (!ok) return;
+        WM.toast("메모가 등록되었습니다.");
+        rerenderKeepScroll();
+        var cmtAgain = document.getElementById("comment-input");
+        if (cmtAgain) cmtAgain.focus();
       });
-      WM.toast("메모가 등록되었습니다.");
-      rerenderKeepScroll();
-      var cmtAgain = document.getElementById("comment-input");
-      if (cmtAgain) cmtAgain.focus();
     } else if (act === "comment-remove") {
       var cmtCid = el.dataset.cid;
       var cmtTask2 = getTask(id);
@@ -570,9 +698,11 @@
       }, function () {
         updateTask(id, {
           comments: (cmtTask2.comments || []).filter(function (c) { return c.id !== cmtCid; })
+        }).then(function (ok) {
+          if (!ok) return;
+          WM.toast("메모가 삭제되었습니다.");
+          rerenderKeepScroll();
         });
-        WM.toast("메모가 삭제되었습니다.");
-        rerenderKeepScroll();
       });
     } else if (act === "cal-prev" || act === "cal-next") {
       var calD = new Date(App.cal.y, App.cal.m + (act === "cal-prev" ? -1 : 1), 1);
@@ -598,8 +728,10 @@
     var el = e.target.closest("[data-action='quick-status'], [data-action='detail-status']");
     if (!el) return;
     e.stopPropagation();
-    setStatus(el.dataset.id, el.value);
-    rerenderKeepScroll();
+    el.disabled = true;
+    setStatus(el.dataset.id, el.value).then(function () {
+      rerenderKeepScroll();
+    });
   });
 
   /* 모바일에서 내비 이동 시 드로어 닫기 */
@@ -668,7 +800,25 @@
   updateHeaderClock();
   setInterval(updateHeaderClock, 1000);
   WM.hydrateIcons(document);
-  App.tasks = WM.loadTasks();
   if (!location.hash) location.hash = "#/dashboard";
+
+  // 로딩 화면 → 인증 확인 → Supabase에서 업무 불러오기
   render();
+  WM.authReady
+    .then(function (user) {
+      var emailEl = document.getElementById("sidebar-user-email");
+      if (emailEl && user && user.email) emailEl.textContent = user.email;
+      return WM.api.getTasks();
+    })
+    .then(function (tasks) {
+      App.tasks = tasks;
+      App.ready = true;
+      backup();
+      render();
+    })
+    .catch(function (e) {
+      console.error("업무 데이터를 불러오지 못했습니다.", e);
+      document.getElementById("view").innerHTML =
+        WM.emptyState("업무 데이터를 불러오지 못했습니다.", "네트워크 상태를 확인한 뒤 새로고침해주세요.");
+    });
 })();

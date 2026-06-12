@@ -401,6 +401,7 @@ WM.renderTemplates = function (edit) {
         '<p class="tpl-desc">' + WM.esc(tpl.description) + "</p></div>" +
         '<div class="tpl-actions">' +
           '<button type="button" class="icon-btn tpl-meta-btn" data-action="tpl-meta-edit" data-id="' + tpl.id + '" aria-label="이름/설명 수정">' + WM.icon("pencil", 13) + "</button>" +
+          '<button type="button" class="icon-btn tpl-meta-btn tpl-del-btn" data-action="tpl-delete" data-id="' + tpl.id + '" aria-label="템플릿 삭제">' + WM.icon("trash", 13) + "</button>" +
           '<button type="button" class="btn btn-outline btn-sm" data-action="copy-template" data-id="' + tpl.id + '">' + WM.icon("copy", 13) + "복사</button>" +
         "</div>";
     }
@@ -421,6 +422,8 @@ WM.renderTemplates = function (edit) {
         "</span></li>";
     }).join("");
 
+    var isDefault = WM.DEFAULT_TEMPLATES.some(function (d) { return d.id === tpl.id; });
+
     return '<div class="card tpl-card"><div class="tpl-top">' + top + "</div>" +
       '<p class="tpl-count">' + WM.icon("listchecks", 12) + "체크리스트 " + tpl.items.length + "개 항목</p>" +
       '<ol class="tpl-items">' + items + "</ol>" +
@@ -428,13 +431,30 @@ WM.renderTemplates = function (edit) {
         '<input data-tpl-add-input data-id="' + tpl.id + '" placeholder="체크리스트 항목 추가" />' +
         '<button type="button" class="btn btn-outline btn-sm" data-action="tpl-item-add" data-id="' + tpl.id + '">' + WM.icon("plus", 13) + "추가</button>" +
       "</div>" +
-      '<button type="button" class="tpl-restore" data-action="tpl-restore" data-id="' + tpl.id + '">' + WM.icon("rotate", 12) + "기본값 복원</button>" +
+      (isDefault ? '<button type="button" class="tpl-restore" data-action="tpl-restore" data-id="' + tpl.id + '">' + WM.icon("rotate", 12) + "기본값 복원</button>" : "") +
     "</div>";
   }).join("");
 
-  return '<div class="page-head"><h1>업무 템플릿</h1>' +
-    "<p>업무 등록 시 카테고리를 선택하면 해당 템플릿을 체크리스트로 불러올 수 있습니다. 이름·설명·항목을 이 화면에서 바로 수정할 수 있습니다.</p></div>" +
-    '<div class="tpl-grid">' + cards + "</div>";
+  // 새 템플릿 추가 카드
+  var catOpts = WM.CATEGORY_ORDER.map(function (c) {
+    return '<option value="' + c + '">' + WM.CATEGORY_LABELS[c] + "</option>";
+  }).join("");
+  var newCard = '<div class="card tpl-card tpl-new">' +
+    '<h3 class="tpl-name" style="margin-top:0">' + WM.icon("plus", 14) + " 새 템플릿 추가</h3>" +
+    '<p class="tpl-desc">카테고리를 선택하고 이름을 입력해 나만의 템플릿을 만드세요. 항목은 만든 뒤 바로 추가할 수 있습니다.</p>' +
+    '<div class="tpl-new-form">' +
+      '<div><label class="field-label">카테고리</label><select class="select" id="new-tpl-category">' + catOpts + "</select></div>" +
+      '<div><label class="field-label">템플릿 이름 <span style="color:var(--red-500)">*</span></label>' +
+        '<input class="input" id="new-tpl-name" placeholder="예: 하자보수 업무 템플릿" /></div>' +
+      '<div><label class="field-label">설명 (선택)</label>' +
+        '<input class="input" id="new-tpl-desc" placeholder="템플릿이 다루는 업무 흐름" /></div>' +
+      '<button type="button" class="btn btn-primary" data-action="tpl-create">' + WM.icon("plus", 15) + "템플릿 추가</button>" +
+    "</div></div>";
+
+  return '<div class="page-head page-head-row"><div><h1>업무 템플릿</h1>' +
+    "<p>업무 등록 시 카테고리를 선택하면 해당 템플릿을 체크리스트로 불러올 수 있습니다. 이 화면에서 직접 추가·수정·삭제할 수 있습니다.</p></div>" +
+    '<button type="button" class="btn btn-outline btn-sm" data-action="tpl-restore-defaults">' + WM.icon("rotate", 13) + "기본 템플릿 복원</button></div>" +
+    '<div class="tpl-grid">' + cards + newCard + "</div>";
 };
 
 /* ---- 설정 페이지 ---- */
@@ -443,8 +463,8 @@ WM.renderSettings = function (tasks) {
   return '<div class="settings-wrap">' +
     '<div class="page-head" style="margin:0"><h1>설정</h1><p>데이터 백업·복원과 앱 정보를 관리합니다.</p></div>' +
     '<div class="card section-card"><h2 class="sec-h">저장 방식</h2>' +
-      '<p class="storage-line"><span class="ic">' + WM.icon("database", 15) + "</span><span><b>localStorage 모드</b> — 데이터는 이 브라우저에만 저장됩니다.</span></p>" +
-      '<p class="set-note">다른 기기와 공유하려면 JSON 내보내기/가져오기를 이용하세요. (서버 버전은 Next.js + Supabase 프로젝트 참고)</p>' +
+      '<p class="storage-line"><span class="ic">' + WM.icon("database", 15) + "</span><span><b>Supabase 온라인 모드</b> — 데이터는 로그인 계정별로 온라인 데이터베이스에 저장됩니다.</span></p>" +
+      '<p class="set-note">어느 기기에서나 같은 계정으로 로그인하면 동일한 데이터를 볼 수 있습니다. 업무 템플릿은 이 브라우저(localStorage)에 저장됩니다.</p>' +
     "</div>" +
     '<div class="card section-card"><h2 class="sec-h">데이터 백업 / 복원</h2>' +
       '<div class="set-row">' +
@@ -461,14 +481,15 @@ WM.renderSettings = function (tasks) {
       "</div>" +
     "</div>" +
     '<div class="card section-card set-info"><h2 class="sec-h">앱 정보</h2><dl>' +
-      '<div class="r"><dt>앱 이름</dt><dd>업무 매니지먼트 (건설/공사 행정)</dd></div>' +
-      '<div class="r"><dt>버전</dt><dd>0.2.0 (정적 웹 버전)</dd></div>' +
-      '<div class="r"><dt>저장 키</dt><dd class="mono">' + WM.STORAGE_KEY + "</dd></div>" +
+      '<div class="r"><dt>앱 이름</dt><dd>SOERP - 김소은상회(주) 업무 매니지먼트</dd></div>' +
+      '<div class="r"><dt>버전</dt><dd>0.3.0 (Supabase 연동)</dd></div>' +
+      '<div class="r"><dt>로그인 계정</dt><dd>' + WM.esc(window.currentUser && window.currentUser.email ? window.currentUser.email : "-") + "</dd></div>" +
+      '<div class="r"><dt>저장 위치</dt><dd>Supabase · tasks 테이블</dd></div>' +
       '<div class="r"><dt>업무 데이터</dt><dd>' + tasks.length + "건</dd></div>" +
       '<div class="r"><dt>마지막 업데이트</dt><dd>' +
         (lastUpdated ? WM.formatKorean(lastUpdated) + " " + lastUpdated.slice(11, 16) : "-") + "</dd></div>" +
     "</dl>" +
-      '<p class="set-tip">' + WM.icon("info", 13) + "이 앱은 다른 담당자의 반복 업무를 관리하기 위한 도구입니다. 샘플 데이터는 모두 가상의 데이터입니다.</p>" +
+      '<p class="set-tip">' + WM.icon("info", 13) + "SOERP는 건설/공사 행정 반복 업무를 관리하기 위한 도구입니다. 샘플 데이터는 모두 가상의 데이터입니다.</p>" +
     "</div>" +
   "</div>";
 };
@@ -484,7 +505,11 @@ WM.renderNotFound = function () {
 WM.renderTaskForm = function (formState, isEdit) {
   function opt(v, label, cur) { return '<option value="' + v + '"' + (v === cur ? " selected" : "") + ">" + label + "</option>"; }
   var v = formState;
-  var tpl = WM.getTemplateByCategory(v.category);
+  var tpls = WM.getTemplatesByCategory(v.category);
+  var tplBtns = tpls.map(function (tpl) {
+    return '<button type="button" class="tpl-apply-btn" data-action="tpl-apply" data-tplid="' + tpl.id + '">' +
+      WM.icon("filestack", 12) + WM.esc(tpl.name) + " 불러오기</button>";
+  }).join("");
 
   return '<div class="modal-dim" data-form-dim>' +
     '<div class="modal">' +
@@ -515,7 +540,7 @@ WM.renderTaskForm = function (formState, isEdit) {
         '<div><label class="field-label">확인사항</label><input class="input" id="f-confirmationNote" value="' + WM.esc(v.confirmationNote || "") + '" placeholder="예: 담당자 회신 대기" /></div>' +
         "<div>" +
           '<div class="cl-form-head"><label class="field-label" style="margin:0">체크리스트</label>' +
-            (tpl ? '<button type="button" class="tpl-apply-btn" data-action="tpl-apply">' + WM.icon("filestack", 12) + WM.esc(tpl.name) + " 불러오기</button>" : "") +
+            (tplBtns ? '<span class="tpl-apply-group">' + tplBtns + "</span>" : "") +
           "</div>" +
           '<div id="form-checklist">' + WM.checklistHtml(v.checklist, "form", null) + "</div>" +
         "</div>" +

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>업무 매니지먼트</title>
-  <meta name="description" content="건설/공사 행정 업무 관리 대시보드" />
+  <title>SOERP - 김소은상회(주) 업무 매니지먼트</title>
+  <meta name="description" content="SOERP - 김소은상회(주) 건설/공사 행정 업무 관리 대시보드" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -15,14 +15,18 @@
       <div class="sidebar-brand">
         <span class="brand-logo" data-icon="building2"></span>
         <div class="brand-text">
-          <p class="brand-title">업무 매니지먼트</p>
-          <p class="brand-sub">건설/공사 행정</p>
+          <p class="brand-title">SOERP</p>
+          <p class="brand-sub">김소은상회(주) 업무 매니지먼트</p>
         </div>
         <button class="icon-btn drawer-close" data-action="menu-close" aria-label="메뉴 닫기" data-icon="x"></button>
       </div>
       <nav class="sidebar-nav" id="sidebar-nav"></nav>
       <div class="sidebar-foot">
-        MVP · 데이터는 이 브라우저(localStorage)에 저장됩니다.<br />
+        <div class="sidebar-user">
+          <span class="user-email" id="sidebar-user-email"></span>
+          <button type="button" class="logout-btn" id="logout-btn" title="로그아웃" aria-label="로그아웃" data-icon="logout"></button>
+        </div>
+        데이터는 Supabase에 계정별로 저장됩니다.<br />
         백업은 Settings의 JSON 내보내기를 이용하세요.
       </div>
     </aside>
@@ -52,11 +56,16 @@
   <div id="confirm-root"></div>
   <div id="toast-root" class="toast-root"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabaseClient.js"></script>
+  <script src="js/authGuard.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/templates.js"></script>
   <script src="js/store.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/taskApi.js"></script>
   <script src="js/views.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/logout.js"></script>
 </body>
 </html>
