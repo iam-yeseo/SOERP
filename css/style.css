@@ -1,8 +1,8 @@
 /* ===== 디자인 토큰 ===== */
 :root {
-  --brand-50:#f0f7f4; --brand-100:#dcebe4; --brand-200:#bcd8cb;
-  --brand-300:#92bfac; --brand-400:#65a18a; --brand-600:#27664f;
-  --brand-700:#1a5343; --brand-800:#154237;
+  --brand-50:#eef4ff; --brand-100:#d9e6fe; --brand-200:#b6cffd;
+  --brand-300:#8bb1fb; --brand-400:#5c90fa; --brand-600:#3d7df9;
+  --brand-700:#266ff8; --brand-800:#1656d4;
   --gray-50:#f9fafb; --gray-100:#f3f4f6; --gray-200:#e5e7eb; --gray-300:#d1d5db;
   --gray-400:#9ca3af; --gray-500:#6b7280; --gray-600:#4b5563; --gray-700:#374151;
   --gray-900:#111827;
@@ -41,8 +41,8 @@ svg { display:block; }
 .drawer-dim { position:fixed; inset:0; background:rgba(17,24,39,.4); z-index:39; display:none; }
 .drawer-dim.show { display:block; }
 .sidebar-brand { display:flex; align-items:center; gap:10px; height:64px; padding:0 18px; border-bottom:1px solid var(--gray-100); position:relative; }
-.brand-link { display:flex; flex-direction:column; gap:3px; }
-.brand-img { height:26px; width:auto; display:block; }
+.brand-link { display:flex; align-items:center; }
+.brand-img { height:36px; width:auto; display:block; }
 .brand-logo { display:flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:10px; background:var(--brand-700); color:#fff; flex-shrink:0; }
 .brand-title { font-size:14px; font-weight:700; }
 .brand-sub { font-size:11px; color:var(--gray-400); }
