@@ -87,6 +87,9 @@ python -m http.server 8000
 work-management-web/
 ├── index.html            # 앱 셸 (사이드바/헤더/뷰 컨테이너) — 로그인 필요
 ├── login.html            # 로그인/회원가입 페이지
+├── assets/
+│   ├── soerp-logo.svg    # SOERP 로고 (사이드바/로그인 페이지)
+│   └── soerp-mark.svg    # 심볼만 추출한 파비콘용 SVG
 ├── css/
 │   └── style.css         # 전체 스타일 (디자인 토큰 + 반응형 + 인터랙션)
 └── js/

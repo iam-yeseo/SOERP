@@ -41,6 +41,8 @@ svg { display:block; }
 .drawer-dim { position:fixed; inset:0; background:rgba(17,24,39,.4); z-index:39; display:none; }
 .drawer-dim.show { display:block; }
 .sidebar-brand { display:flex; align-items:center; gap:10px; height:64px; padding:0 18px; border-bottom:1px solid var(--gray-100); position:relative; }
+.brand-link { display:flex; flex-direction:column; gap:3px; }
+.brand-img { height:26px; width:auto; display:block; }
 .brand-logo { display:flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:10px; background:var(--brand-700); color:#fff; flex-shrink:0; }
 .brand-title { font-size:14px; font-weight:700; }
 .brand-sub { font-size:11px; color:var(--gray-400); }
@@ -405,7 +407,8 @@ svg { display:block; }
   padding:24px 16px; background:var(--gray-50);
 }
 .login-card { width:100%; max-width:400px; padding:32px 28px; animation:modal-in .25s cubic-bezier(.16,1,.3,1); }
-.login-brand { display:flex; align-items:center; gap:10px; margin-bottom:28px; }
+.login-brand { display:flex; flex-direction:column; align-items:flex-start; gap:6px; margin-bottom:28px; }
+.login-logo { height:38px; width:auto; display:block; }
 .login-title { font-size:20px; font-weight:700; }
 .login-sub { margin-top:4px; margin-bottom:20px; font-size:13px; color:var(--gray-500); }
 .login-form { display:flex; flex-direction:column; gap:14px; }
