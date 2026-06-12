@@ -74,6 +74,7 @@ WM.toast = function (message, type) {
   el.className = "toast" + (type === "error" ? " error" : "");
   el.innerHTML = '<span class="tick">' + WM.icon(type === "error" ? "xcircle" : "checkcircle", 15) + "</span>" + WM.esc(message);
   root.appendChild(el);
+  setTimeout(function () { el.classList.add("out"); }, 2250);
   setTimeout(function () { el.remove(); }, 2500);
 };
 

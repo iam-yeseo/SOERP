@@ -399,6 +399,108 @@ svg { display:block; }
 .nf p { margin-top:8px; font-size:14px; color:var(--gray-500); }
 .nf .btn { margin-top:20px; }
 
+/* ===== 인터랙션 (빠르고 절제된 모션) ===== */
+
+/* 페이지 전환: 라우트 변경 시에만 발동 (.view-anim은 JS가 부여) */
+@keyframes view-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+@keyframes card-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+.view-anim { animation:view-in .18s ease-out; }
+.view-anim .summary-grid .summary-card,
+.view-anim .task-grid > .task-card,
+.view-anim .tpl-grid > .tpl-card { animation:card-in .2s ease-out backwards; }
+.view-anim .summary-grid .summary-card:nth-child(2),
+.view-anim .task-grid > .task-card:nth-child(2),
+.view-anim .tpl-grid > .tpl-card:nth-child(2) { animation-delay:.04s; }
+.view-anim .summary-grid .summary-card:nth-child(3),
+.view-anim .task-grid > .task-card:nth-child(3),
+.view-anim .tpl-grid > .tpl-card:nth-child(3) { animation-delay:.08s; }
+.view-anim .summary-grid .summary-card:nth-child(4),
+.view-anim .task-grid > .task-card:nth-child(4),
+.view-anim .tpl-grid > .tpl-card:nth-child(4) { animation-delay:.12s; }
+.view-anim .task-grid > .task-card:nth-child(n+5),
+.view-anim .tpl-grid > .tpl-card:nth-child(n+5) { animation-delay:.15s; }
+
+/* 모달: 페이드 + 살짝 떠오르기 */
+@keyframes dim-in { from { opacity:0; } to { opacity:1; } }
+@keyframes modal-in { from { opacity:0; transform:translateY(10px) scale(.98); } to { opacity:1; transform:none; } }
+.modal-dim { animation:dim-in .15s ease-out; }
+.modal { animation:modal-in .18s cubic-bezier(.16,1,.3,1); }
+.drawer-dim.show { animation:dim-in .2s ease-out; }
+
+/* 토스트: 사라질 때 페이드아웃 */
+@keyframes toast-out { to { opacity:0; transform:translateY(8px); } }
+.toast.out { animation:toast-out .25s ease forwards; }
+
+/* 입력 오류: 쉐이크 */
+@keyframes shake {
+  20%, 60% { transform:translateX(-4px); }
+  40%, 80% { transform:translateX(4px); }
+}
+.shake { animation:shake .3s ease; }
+
+/* 호버 리프트 */
+.task-card { transition:box-shadow .15s, transform .15s, border-color .15s; }
+.task-card:hover { transform:translateY(-2px); }
+.summary-card { transition:box-shadow .15s, transform .15s; }
+.summary-card:hover { box-shadow:var(--shadow-hover); transform:translateY(-1px); }
+.tpl-card { transition:box-shadow .15s, transform .15s; }
+.tpl-card:hover { transform:translateY(-1px); }
+
+/* 버튼: 누르는 느낌 */
+.btn { transition:background .15s, color .15s, border-color .15s, transform .1s, box-shadow .15s; }
+.btn:active { transform:scale(.97); }
+.icon-btn { transition:background .12s, color .12s, transform .1s; }
+.icon-btn:active { transform:scale(.92); }
+.view-toggle button { transition:background .12s, color .12s; }
+.tpl-apply-btn { transition:background .12s, transform .1s; }
+.tpl-apply-btn:active { transform:scale(.97); }
+
+/* 체크박스: 체크 시 부드러운 전환 + 프레스 */
+.cl-check { transition:background .12s, border-color .12s, transform .1s; }
+.cl-check:active { transform:scale(.88); }
+.checklist li { transition:background .12s; }
+.cl-label { transition:color .15s; }
+
+/* 사이드바 내비: 살짝 밀리는 호버 */
+.nav-link { transition:background .15s, color .15s, transform .15s; }
+.nav-link:hover { transform:translateX(2px); }
+.nav-link.active { transform:none; }
+
+/* 입력 요소: 포커스 전환 */
+.input, .select, .textarea, .header-search input, .filter-q input, .cl-add-row input, .cl-edit-input {
+  transition:border-color .12s, box-shadow .12s, background .12s;
+}
+.filters select, .quick-status, .st-select { transition:border-color .12s, background .12s; }
+
+/* 테이블/리스트 호버 */
+.task-table tbody tr { transition:background .12s; }
+.tpl-items li { transition:background .12s; }
+
+/* 아이콘 툴버튼: 색 전환 */
+.tc-del, .row-del, .cl-tools button, .cl-edit-tools button, .tpl-tools button, .cmt-del, .tpl-restore {
+  transition:color .12s, opacity .15s;
+}
+
+/* 달력: 셀/칩 호버 */
+.cal-cell { transition:background .15s; }
+.cal-cell:not(.other):hover { background:var(--brand-50); }
+.cal-chip { transition:filter .12s, transform .12s; }
+.cal-chip:hover { transform:translateX(2px); }
+.cal-nav .icon-btn { transition:background .12s, border-color .12s, transform .1s; }
+
+/* 메모(댓글) 카드 */
+.cmt { transition:border-color .15s, background .15s; }
+.cmt:hover { border-color:var(--gray-200); }
+
+/* 모션 최소화 환경 존중 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+  }
+}
+
 /* ===== 반응형 ===== */
 .mobile-only { display:flex; }
 .desktop-only { display:none; }

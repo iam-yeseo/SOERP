@@ -71,6 +71,18 @@
     }
 
     renderNav(r.page);
+
+    // 페이지(라우트) 변경 시에만 전환 애니메이션 발동
+    var pageKey = r.page + "/" + (r.id || "");
+    if (App._lastPage !== pageKey) {
+      App._lastPage = pageKey;
+      view.classList.remove("view-anim");
+      void view.offsetWidth; // reflow로 애니메이션 재시작
+      view.classList.add("view-anim");
+      clearTimeout(App._viewAnimTimer);
+      App._viewAnimTimer = setTimeout(function () { view.classList.remove("view-anim"); }, 600);
+    }
+
     window.scrollTo(0, 0);
   }
 
@@ -138,9 +150,18 @@
     paintForm();
   }
 
-  function paintForm() {
+  function paintForm(repaint) {
     document.getElementById("modal-root").innerHTML =
       WM.renderTaskForm(App.form.values, !!App.form.editId);
+    if (repaint) {
+      // 카테고리 변경 등으로 다시 그릴 때는 등장 애니메이션 생략
+      var dimEl = document.querySelector("#modal-root .modal-dim");
+      if (dimEl) {
+        dimEl.style.animation = "none";
+        var modalEl = dimEl.querySelector(".modal");
+        if (modalEl) modalEl.style.animation = "none";
+      }
+    }
     bindFormFields();
   }
 
@@ -181,7 +202,7 @@
     var cat = document.getElementById("f-category");
     if (cat) cat.addEventListener("change", function () {
       v.category = cat.value;
-      paintForm(); // 템플릿 버튼 라벨 갱신
+      paintForm(true); // 템플릿 버튼 라벨 갱신 (애니메이션 없이)
     });
     var st = document.getElementById("f-status");
     if (st) st.addEventListener("change", function () { v.status = st.value; });
@@ -212,7 +233,11 @@
       var err = document.getElementById("f-title-error");
       if (err) err.style.display = "block";
       var ti = document.getElementById("f-title");
-      if (ti) ti.focus();
+      if (ti) {
+        ti.focus();
+        ti.classList.add("shake");
+        setTimeout(function () { ti.classList.remove("shake"); }, 350);
+      }
       return;
     }
     // 빈 문자열 옵션 필드 정리
@@ -262,7 +287,7 @@
     } else {
       var r = route();
       updateTask(r.id, { checklist: list });
-      render(); // 상세 화면 진행률 포함 갱신
+      rerenderKeepScroll(); // 상세 화면 진행률 포함 갱신 (스크롤 유지)
     }
   }
 
@@ -368,7 +393,7 @@
     } else if (act === "complete-task") {
       setStatus(id, "done");
       WM.toast("완료 처리되었습니다.");
-      render();
+      rerenderKeepScroll();
     } else if (act === "delete-task" || act === "delete-task-detail") {
       e.stopPropagation();
       var t = getTask(id);
@@ -574,7 +599,7 @@
     if (!el) return;
     e.stopPropagation();
     setStatus(el.dataset.id, el.value);
-    render();
+    rerenderKeepScroll();
   });
 
   /* 모바일에서 내비 이동 시 드로어 닫기 */
