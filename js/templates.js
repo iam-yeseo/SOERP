@@ -1,8 +1,10 @@
 /* ===== 업무 유형별 체크리스트 템플릿 =====
-   항목을 수정하려면 이 파일의 items 배열만 고치면 됩니다. */
+   템플릿은 localStorage에 저장되며, Templates 페이지에서 직접 수정할 수 있습니다. */
 window.WM = window.WM || {};
 
-WM.CHECKLIST_TEMPLATES = [
+WM.TEMPLATE_STORAGE_KEY = "work-management-templates";
+
+WM.DEFAULT_TEMPLATES = [
   {
     id: "tpl-bid", category: "bid", name: "입찰 업무 템플릿",
     description: "K-APT / 나라장터 공고 확인부터 결과 확인까지",
@@ -48,8 +50,49 @@ WM.CHECKLIST_TEMPLATES = [
   }
 ];
 
+function deepCopyDefaults() {
+  return JSON.parse(JSON.stringify(WM.DEFAULT_TEMPLATES));
+}
+
+/* ---- 저장/로드 (손상 데이터 방어) ---- */
+WM.loadTemplates = function () {
+  try {
+    var raw = localStorage.getItem(WM.TEMPLATE_STORAGE_KEY);
+    if (raw === null) return deepCopyDefaults();
+    var parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return deepCopyDefaults();
+    var valid = parsed.filter(function (t) {
+      return t && typeof t.id === "string" && typeof t.category === "string" &&
+        typeof t.name === "string" && Array.isArray(t.items);
+    }).map(function (t) {
+      t.description = typeof t.description === "string" ? t.description : "";
+      t.items = t.items.filter(function (i) { return typeof i === "string"; });
+      return t;
+    });
+    return valid.length ? valid : deepCopyDefaults();
+  } catch (e) {
+    console.error("템플릿 데이터를 읽지 못했습니다.", e);
+    return deepCopyDefaults();
+  }
+};
+
+WM.saveTemplates = function () {
+  try {
+    localStorage.setItem(WM.TEMPLATE_STORAGE_KEY, JSON.stringify(WM.CHECKLIST_TEMPLATES));
+  } catch (e) {
+    console.error("템플릿 저장에 실패했습니다.", e);
+    if (WM.toast) WM.toast("템플릿 저장에 실패했습니다.", "error");
+  }
+};
+
+WM.CHECKLIST_TEMPLATES = WM.loadTemplates();
+
 WM.getTemplateByCategory = function (category) {
   return WM.CHECKLIST_TEMPLATES.find(function (t) { return t.category === category; });
+};
+
+WM.getTemplateById = function (id) {
+  return WM.CHECKLIST_TEMPLATES.find(function (t) { return t.id === id; });
 };
 
 /** 템플릿 → 체크리스트 항목 배열 */

@@ -229,6 +229,33 @@ WM.checklistHtml = function (items, ctx, editingId) {
     "</div>";
 };
 
+/* ---- 메모(댓글) 카드 ---- */
+WM.commentsCardHtml = function (t) {
+  var comments = (t.comments || []).slice().sort(function (a, b) {
+    return a.createdAt < b.createdAt ? -1 : 1;
+  });
+
+  var list = comments.length
+    ? '<div class="cmt-list">' + comments.map(function (c) {
+        return '<div class="cmt">' +
+          '<div class="cmt-head"><span class="cmt-time">' + WM.formatDateTime(c.createdAt) + "</span>" +
+            '<button type="button" class="cmt-del" data-action="comment-remove" data-id="' + t.id + '" data-cid="' + c.id + '" aria-label="메모 삭제">' + WM.icon("trash", 13) + "</button>" +
+          "</div>" +
+          '<p class="cmt-text">' + WM.esc(c.text) + "</p>" +
+        "</div>";
+      }).join("") + "</div>"
+    : '<p class="none-text">작성된 메모가 없습니다. 첫 메모를 남겨보세요.</p>';
+
+  return '<div class="card section-card"><h2 class="sec-h">메모' +
+      (comments.length ? ' <span class="cmt-count">' + comments.length + "</span>" : "") + "</h2>" +
+    list +
+    '<div class="cmt-add">' +
+      '<textarea class="textarea" id="comment-input" rows="2" placeholder="메모를 입력하세요 (Ctrl+Enter로 등록)"></textarea>' +
+      '<button type="button" class="btn btn-primary" data-action="comment-add" data-id="' + t.id + '">등록</button>' +
+    "</div>" +
+  "</div>";
+};
+
 /* ---- 업무 상세 ---- */
 WM.renderTaskDetail = function (t) {
   if (!t) {
@@ -276,9 +303,7 @@ WM.renderTaskDetail = function (t) {
           (t.checklist.length ? '<div class="progress cl-bar"><i style="width:' + progress + '%"></i></div>' : "") +
           '<div id="detail-checklist">' + WM.checklistHtml(t.checklist, "detail", null) + "</div>" +
         "</div>" +
-        '<div class="card section-card"><h2 class="sec-h">메모</h2>' +
-          (t.memo ? '<p class="memo-text">' + WM.esc(t.memo) + "</p>" : '<p class="none-text">작성된 메모가 없습니다.</p>') +
-        "</div>" +
+        WM.commentsCardHtml(t) +
       "</div>" +
       '<div class="detail-side">' +
         '<div class="card section-card set-info"><h2 class="sec-h">업무 정보</h2><dl class="info-rows">' +
@@ -299,24 +324,116 @@ WM.renderTaskDetail = function (t) {
   "</div>";
 };
 
-/* ---- 템플릿 페이지 ---- */
-WM.renderTemplates = function () {
-  var cards = WM.CHECKLIST_TEMPLATES.map(function (tpl) {
-    var items = tpl.items.map(function (item, i) {
-      return '<li><span class="num">' + (i + 1) + "</span>" + WM.esc(item) + "</li>";
+/* ---- 달력 ---- */
+WM.renderCalendar = function (tasks, y, m) {
+  var todayStr = WM.todayStr();
+
+  // 날짜별 업무 매핑 (마감일 우선, 없으면 업무 날짜)
+  var byDate = {};
+  tasks.forEach(function (t) {
+    var d = t.dueDate || t.date;
+    if (!d) return;
+    if (!byDate[d]) byDate[d] = [];
+    byDate[d].push(t);
+  });
+
+  var startDow = new Date(y, m, 1).getDay();
+  var daysInMonth = new Date(y, m + 1, 0).getDate();
+  var totalCells = Math.ceil((startDow + daysInMonth) / 7) * 7;
+
+  var cells = "";
+  for (var i = 0; i < totalCells; i++) {
+    var d = new Date(y, m, i - startDow + 1);
+    var dateStr = d.getFullYear() + "-" +
+      String(d.getMonth() + 1).padStart(2, "0") + "-" +
+      String(d.getDate()).padStart(2, "0");
+    var other = d.getMonth() !== m;
+    var dow = i % 7;
+
+    var list = WM.sortTasks(byDate[dateStr] || [], "priority");
+    var chips = list.slice(0, 4).map(function (t) {
+      return '<button type="button" class="cal-chip b-st-' + t.status + (t.status === "done" || t.status === "cancelled" ? " muted" : "") +
+        '" data-action="cal-open" data-id="' + t.id + '" title="' + WM.esc(t.title) + '">' + WM.esc(t.title) + "</button>";
     }).join("");
-    return '<div class="card tpl-card"><div class="tpl-top"><div>' +
-      WM.badgeCat(tpl.category) +
-      '<h3 class="tpl-name">' + WM.esc(tpl.name) + "</h3>" +
-      '<p class="tpl-desc">' + WM.esc(tpl.description) + "</p></div>" +
-      '<button type="button" class="btn btn-outline btn-sm" data-action="copy-template" data-id="' + tpl.id + '">' + WM.icon("copy", 13) + "복사</button>" +
+    if (list.length > 4) chips += '<p class="cal-more">+' + (list.length - 4) + "건</p>";
+
+    cells += '<div class="cal-cell' + (other ? " other" : "") + '">' +
+      '<span class="cal-day' + (dateStr === todayStr ? " today" : "") + (dow === 0 ? " sun" : dow === 6 ? " sat" : "") + '">' + d.getDate() + "</span>" +
+      chips + "</div>";
+  }
+
+  var dowHead = ["일", "월", "화", "수", "목", "금", "토"].map(function (label, i) {
+    return '<span class="' + (i === 0 ? "sun" : i === 6 ? "sat" : "") + '">' + label + "</span>";
+  }).join("");
+
+  return '<div class="page-head"><h1>달력</h1><p>마감일(없으면 업무 날짜) 기준으로 일정을 한눈에 확인하세요.</p></div>' +
+    '<div class="cal-toolbar">' +
+      '<h2 class="cal-title">' + y + "년 " + (m + 1) + "월</h2>" +
+      '<div class="cal-nav">' +
+        '<button type="button" class="icon-btn" data-action="cal-prev" aria-label="이전 달">' + WM.icon("arrowleft", 16) + "</button>" +
+        '<button type="button" class="btn btn-outline btn-sm" data-action="cal-today">오늘</button>' +
+        '<button type="button" class="icon-btn" data-action="cal-next" aria-label="다음 달">' + WM.icon("arrowright", 16) + "</button>" +
       "</div>" +
+    "</div>" +
+    '<div class="card calendar"><div class="cal-dow">' + dowHead + '</div><div class="cal-grid">' + cells + "</div></div>";
+};
+
+/* ---- 템플릿 페이지 (웹에서 직접 수정 가능) ---- */
+WM.renderTemplates = function (edit) {
+  edit = edit || null;
+
+  var cards = WM.CHECKLIST_TEMPLATES.map(function (tpl) {
+    var isMeta = edit && edit.id === tpl.id && edit.meta;
+
+    var top;
+    if (isMeta) {
+      top = '<div class="tpl-meta-edit">' +
+        WM.badgeCat(tpl.category) +
+        '<input class="input" id="tpl-name-input" value="' + WM.esc(tpl.name) + '" placeholder="템플릿 이름" />' +
+        '<input class="input" id="tpl-desc-input" value="' + WM.esc(tpl.description) + '" placeholder="설명" />' +
+        '<div class="tpl-actions">' +
+          '<button type="button" class="btn btn-primary btn-sm" data-action="tpl-meta-save" data-id="' + tpl.id + '">저장</button>' +
+          '<button type="button" class="btn btn-outline btn-sm" data-action="tpl-edit-cancel">취소</button>' +
+        "</div></div>";
+    } else {
+      top = "<div>" + WM.badgeCat(tpl.category) +
+        '<h3 class="tpl-name">' + WM.esc(tpl.name) + "</h3>" +
+        '<p class="tpl-desc">' + WM.esc(tpl.description) + "</p></div>" +
+        '<div class="tpl-actions">' +
+          '<button type="button" class="icon-btn tpl-meta-btn" data-action="tpl-meta-edit" data-id="' + tpl.id + '" aria-label="이름/설명 수정">' + WM.icon("pencil", 13) + "</button>" +
+          '<button type="button" class="btn btn-outline btn-sm" data-action="copy-template" data-id="' + tpl.id + '">' + WM.icon("copy", 13) + "복사</button>" +
+        "</div>";
+    }
+
+    var items = tpl.items.map(function (item, i) {
+      if (edit && edit.id === tpl.id && edit.item === i) {
+        return '<li><span class="num">' + (i + 1) + "</span>" +
+          '<input class="cl-edit-input" data-tpl-edit-input value="' + WM.esc(item) + '" />' +
+          '<span class="cl-edit-tools">' +
+            '<button type="button" class="save" data-action="tpl-item-save" data-id="' + tpl.id + '" data-idx="' + i + '" aria-label="저장">' + WM.icon("check", 15) + "</button>" +
+            '<button type="button" data-action="tpl-edit-cancel" aria-label="취소">' + WM.icon("x", 15) + "</button>" +
+          "</span></li>";
+      }
+      return '<li><span class="num">' + (i + 1) + '</span><span class="lbl">' + WM.esc(item) + "</span>" +
+        '<span class="tpl-tools">' +
+          '<button type="button" data-action="tpl-item-edit" data-id="' + tpl.id + '" data-idx="' + i + '" aria-label="항목 수정">' + WM.icon("pencil", 13) + "</button>" +
+          '<button type="button" class="del" data-action="tpl-item-remove" data-id="' + tpl.id + '" data-idx="' + i + '" aria-label="항목 삭제">' + WM.icon("trash", 13) + "</button>" +
+        "</span></li>";
+    }).join("");
+
+    return '<div class="card tpl-card"><div class="tpl-top">' + top + "</div>" +
       '<p class="tpl-count">' + WM.icon("listchecks", 12) + "체크리스트 " + tpl.items.length + "개 항목</p>" +
-      '<ol class="tpl-items">' + items + "</ol></div>";
+      '<ol class="tpl-items">' + items + "</ol>" +
+      '<div class="cl-add-row">' +
+        '<input data-tpl-add-input data-id="' + tpl.id + '" placeholder="체크리스트 항목 추가" />' +
+        '<button type="button" class="btn btn-outline btn-sm" data-action="tpl-item-add" data-id="' + tpl.id + '">' + WM.icon("plus", 13) + "추가</button>" +
+      "</div>" +
+      '<button type="button" class="tpl-restore" data-action="tpl-restore" data-id="' + tpl.id + '">' + WM.icon("rotate", 12) + "기본값 복원</button>" +
+    "</div>";
   }).join("");
 
   return '<div class="page-head"><h1>업무 템플릿</h1>' +
-    "<p>업무 등록 시 카테고리를 선택하면 해당 템플릿을 체크리스트로 불러올 수 있습니다. 항목 수정은 js/templates.js에서 가능합니다.</p></div>" +
+    "<p>업무 등록 시 카테고리를 선택하면 해당 템플릿을 체크리스트로 불러올 수 있습니다. 이름·설명·항목을 이 화면에서 바로 수정할 수 있습니다.</p></div>" +
     '<div class="tpl-grid">' + cards + "</div>";
 };
 
@@ -396,7 +513,6 @@ WM.renderTaskForm = function (formState, isEdit) {
           '<div><label class="field-label">마감일</label><input class="input" type="date" id="f-dueDate" value="' + WM.esc(v.dueDate || "") + '" /></div>' +
         "</div>" +
         '<div><label class="field-label">확인사항</label><input class="input" id="f-confirmationNote" value="' + WM.esc(v.confirmationNote || "") + '" placeholder="예: 담당자 회신 대기" /></div>' +
-        '<div><label class="field-label">메모</label><textarea class="textarea" id="f-memo" rows="3" placeholder="참고할 내용을 메모하세요">' + WM.esc(v.memo || "") + "</textarea></div>" +
         "<div>" +
           '<div class="cl-form-head"><label class="field-label" style="margin:0">체크리스트</label>' +
             (tpl ? '<button type="button" class="tpl-apply-btn" data-action="tpl-apply">' + WM.icon("filestack", 12) + WM.esc(tpl.name) + " 불러오기</button>" : "") +

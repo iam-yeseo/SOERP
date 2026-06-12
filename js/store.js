@@ -1,13 +1,28 @@
 /* ===== 데이터 저장(localStorage) + 업무 로직 ===== */
 window.WM = window.WM || {};
 
+/* ---- 정규화: checklist/comments 보정 + 구버전 memo → 댓글 마이그레이션 ---- */
+function normalizeTask(t) {
+  if (!Array.isArray(t.checklist)) t.checklist = [];
+  if (!Array.isArray(t.comments)) t.comments = [];
+  if (typeof t.memo === "string" && t.memo.trim()) {
+    t.comments.unshift({
+      id: WM.uid(),
+      text: t.memo,
+      createdAt: t.updatedAt || t.createdAt || new Date().toISOString()
+    });
+  }
+  delete t.memo;
+  return t;
+}
+
 /* ---- 저장/로드 (손상 데이터 방어) ---- */
 WM.loadTasks = function () {
   try {
     var raw = localStorage.getItem(WM.STORAGE_KEY);
     if (raw === null) {
       // 첫 실행: 샘플 데이터 시드
-      var sample = WM.createSampleTasks();
+      var sample = WM.createSampleTasks().map(normalizeTask);
       WM.saveTasks(sample);
       return sample;
     }
@@ -15,10 +30,7 @@ WM.loadTasks = function () {
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(function (t) {
       return t && typeof t.id === "string" && typeof t.title === "string";
-    }).map(function (t) {
-      if (!Array.isArray(t.checklist)) t.checklist = [];
-      return t;
-    });
+    }).map(normalizeTask);
   } catch (e) {
     console.error("저장된 데이터를 읽지 못했습니다.", e);
     return [];
@@ -65,7 +77,8 @@ WM.filterTasks = function (tasks, f) {
   var q = (f.q || "").trim().toLowerCase();
   return tasks.filter(function (t) {
     if (q) {
-      var hit = [t.title, t.requester, t.siteName, t.clientName, t.confirmationNote, t.memo]
+      var commentText = (t.comments || []).map(function (c) { return c.text; }).join(" ");
+      var hit = [t.title, t.requester, t.siteName, t.clientName, t.confirmationNote, commentText]
         .some(function (s) { return s && String(s).toLowerCase().indexOf(q) !== -1; });
       if (!hit) return false;
     }
@@ -151,12 +164,16 @@ WM.validateImportedTasks = function (data) {
     var checklist = Array.isArray(t.checklist) ? t.checklist.filter(function (c) {
       return c && typeof c.id === "string" && typeof c.label === "string" && typeof c.checked === "boolean";
     }) : [];
+    var comments = Array.isArray(t.comments) ? t.comments.filter(function (c) {
+      return c && typeof c.id === "string" && typeof c.text === "string" && typeof c.createdAt === "string";
+    }) : [];
     var copy = Object.assign({}, t, {
       checklist: checklist,
+      comments: comments,
       createdAt: typeof t.createdAt === "string" ? t.createdAt : new Date().toISOString(),
       updatedAt: typeof t.updatedAt === "string" ? t.updatedAt : new Date().toISOString()
     });
-    result.push(copy);
+    result.push(normalizeTask(copy));
   }
   return result;
 };

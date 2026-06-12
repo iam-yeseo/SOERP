@@ -5,8 +5,10 @@
     filter: Object.assign({}, WM.DEFAULT_FILTER),
     sort: "dueDate",
     view: "card",
-    form: null,          // { values, editId } 또는 null
-    clEditing: null      // 체크리스트 인라인 수정 중인 항목 id
+    form: null,          // { values, editId, snapshot } 또는 null
+    clEditing: null,     // 체크리스트 인라인 수정 중인 항목 id
+    cal: null,           // 달력 { y, m } (m: 0-based)
+    tplEdit: null        // 템플릿 인라인 수정 상태 { id, meta?, item? }
   };
   WM.App = App;
 
@@ -53,8 +55,14 @@
       bindTaskFilters();
     } else if (r.page === "task" && r.id) {
       view.innerHTML = WM.renderTaskDetail(getTask(r.id));
+    } else if (r.page === "calendar") {
+      if (!App.cal) {
+        var nowD = new Date();
+        App.cal = { y: nowD.getFullYear(), m: nowD.getMonth() };
+      }
+      view.innerHTML = WM.renderCalendar(App.tasks, App.cal.y, App.cal.m);
     } else if (r.page === "templates") {
-      view.innerHTML = WM.renderTemplates();
+      view.innerHTML = WM.renderTemplates(App.tplEdit);
     } else if (r.page === "settings") {
       view.innerHTML = WM.renderSettings(App.tasks);
       bindSettings();
@@ -68,10 +76,18 @@
 
   function rerenderCurrent() { render(); }
 
+  /** 스크롤 위치를 유지하며 다시 렌더링 (인라인 편집용) */
+  function rerenderKeepScroll() {
+    var sy = window.scrollY;
+    render();
+    window.scrollTo(0, sy);
+  }
+
   /* ---- 사이드바 내비 ---- */
   var NAV = [
     { href: "#/dashboard", page: "dashboard", label: "Dashboard", icon: "dashboard" },
     { href: "#/tasks", page: "tasks", label: "Tasks", icon: "list" },
+    { href: "#/calendar", page: "calendar", label: "Calendar", icon: "calendar" },
     { href: "#/templates", page: "templates", label: "Templates", icon: "filestack" },
     { href: "#/settings", page: "settings", label: "Settings", icon: "settings" }
   ];
@@ -106,7 +122,7 @@
   function emptyForm() {
     return { title: "", category: "etc", status: "todo", priority: "normal",
       requester: "", siteName: "", clientName: "", amount: undefined,
-      date: "", dueDate: "", confirmationNote: "", memo: "", checklist: [], attachments: [] };
+      date: "", dueDate: "", confirmationNote: "", checklist: [], comments: [], attachments: [] };
   }
 
   function openForm(editId) {
@@ -118,7 +134,7 @@
     } else {
       values = emptyForm();
     }
-    App.form = { values: values, editId: editId || null };
+    App.form = { values: values, editId: editId || null, snapshot: JSON.stringify(values) };
     paintForm();
   }
 
@@ -131,6 +147,20 @@
   function closeForm() {
     App.form = null;
     document.getElementById("modal-root").innerHTML = "";
+  }
+
+  /** 닫기 요청: 입력 내용이 변경된 경우 경고 후 닫기 */
+  function requestCloseForm() {
+    if (!App.form) return;
+    if (JSON.stringify(App.form.values) !== App.form.snapshot) {
+      WM.confirmDialog({
+        title: "정말 뒤로 가시겠어요?",
+        description: "입력된 내용이 있습니다. 지금 닫으면 작성 중인 내용이 저장되지 않습니다.",
+        confirmLabel: "뒤로 가기", cancelLabel: "계속 작성", danger: true
+      }, closeForm);
+    } else {
+      closeForm();
+    }
   }
 
   /** 폼 입력값 → form state 동기화 (즉시 바인딩) */
@@ -147,7 +177,6 @@
     bind("f-date", "date");
     bind("f-dueDate", "dueDate");
     bind("f-confirmationNote", "confirmationNote");
-    bind("f-memo", "memo");
 
     var cat = document.getElementById("f-category");
     if (cat) cat.addEventListener("change", function () {
@@ -169,11 +198,7 @@
       v.amount = n;
     });
 
-    // 폼 dim 클릭으로 닫기
-    var dim = document.querySelector("[data-form-dim]");
-    if (dim) dim.addEventListener("click", function (e) {
-      if (e.target === dim) closeForm();
-    });
+    // 폼 dim(바깥) 클릭으로는 닫히지 않음 — 닫기/취소 버튼으로만 닫기
   }
 
   function repaintFormChecklist() {
@@ -192,7 +217,7 @@
     }
     // 빈 문자열 옵션 필드 정리
     var clean = Object.assign({}, v, { title: v.title.trim() });
-    ["requester", "siteName", "clientName", "date", "dueDate", "confirmationNote", "memo"].forEach(function (k) {
+    ["requester", "siteName", "clientName", "date", "dueDate", "confirmationNote"].forEach(function (k) {
       if (typeof clean[k] === "string") {
         clean[k] = clean[k].trim();
         if (!clean[k]) delete clean[k];
@@ -213,6 +238,7 @@
     } else {
       var task = Object.assign({ id: WM.uid(), createdAt: now, updatedAt: now }, clean);
       if (!task.checklist) task.checklist = [];
+      if (!task.comments) task.comments = [];
       App.tasks.unshift(task);
       persist();
       WM.toast("업무가 등록되었습니다.");
@@ -362,7 +388,7 @@
       if (history.length > 1) history.back();
       else location.hash = "#/tasks";
     } else if (act === "form-close") {
-      closeForm();
+      requestCloseForm();
     } else if (act === "form-submit") {
       submitForm();
     } else if (act === "tpl-apply") {
@@ -388,8 +414,79 @@
       });
       refreshTaskList();
     } else if (act === "copy-template") {
-      var tplCopy = WM.CHECKLIST_TEMPLATES.find(function (x) { return x.id === id; });
+      var tplCopy = WM.getTemplateById(id);
       if (tplCopy) WM.copyText(tplCopy.items.join("\n"), "체크리스트 항목을 복사했습니다.");
+    } else if (act === "tpl-meta-edit") {
+      App.tplEdit = { id: id, meta: true };
+      rerenderKeepScroll();
+      var nameInput = document.getElementById("tpl-name-input");
+      if (nameInput) nameInput.focus();
+    } else if (act === "tpl-meta-save") {
+      var tplMeta = WM.getTemplateById(id);
+      var nameEl = document.getElementById("tpl-name-input");
+      var descEl = document.getElementById("tpl-desc-input");
+      if (tplMeta && nameEl && nameEl.value.trim()) {
+        tplMeta.name = nameEl.value.trim();
+        tplMeta.description = descEl ? descEl.value.trim() : tplMeta.description;
+        WM.saveTemplates();
+        WM.toast("템플릿이 수정되었습니다.");
+      }
+      App.tplEdit = null;
+      rerenderKeepScroll();
+    } else if (act === "tpl-edit-cancel") {
+      App.tplEdit = null;
+      rerenderKeepScroll();
+    } else if (act === "tpl-item-edit") {
+      App.tplEdit = { id: id, item: Number(el.dataset.idx) };
+      rerenderKeepScroll();
+      var tplEditInput = document.querySelector("[data-tpl-edit-input]");
+      if (tplEditInput) { tplEditInput.focus(); tplEditInput.select(); }
+    } else if (act === "tpl-item-save") {
+      var tplItemT = WM.getTemplateById(id);
+      var tplInp = document.querySelector("[data-tpl-edit-input]");
+      var tplVal = tplInp ? tplInp.value.trim() : "";
+      if (tplItemT && tplVal) {
+        tplItemT.items[Number(el.dataset.idx)] = tplVal;
+        WM.saveTemplates();
+      }
+      App.tplEdit = null;
+      rerenderKeepScroll();
+    } else if (act === "tpl-item-remove") {
+      var tplRm = WM.getTemplateById(id);
+      if (tplRm) {
+        tplRm.items.splice(Number(el.dataset.idx), 1);
+        WM.saveTemplates();
+      }
+      App.tplEdit = null;
+      rerenderKeepScroll();
+    } else if (act === "tpl-item-add") {
+      var tplAddInp = document.querySelector("[data-tpl-add-input][data-id='" + id + "']");
+      var tplLabel = tplAddInp ? tplAddInp.value.trim() : "";
+      if (!tplLabel) return;
+      var tplAddT = WM.getTemplateById(id);
+      if (tplAddT) {
+        tplAddT.items.push(tplLabel);
+        WM.saveTemplates();
+      }
+      rerenderKeepScroll();
+      var tplAgain = document.querySelector("[data-tpl-add-input][data-id='" + id + "']");
+      if (tplAgain) tplAgain.focus();
+    } else if (act === "tpl-restore") {
+      WM.confirmDialog({
+        title: "기본 템플릿으로 복원할까요?",
+        description: "이 템플릿의 이름·설명·체크리스트 항목이 모두 기본값으로 되돌아갑니다.",
+        confirmLabel: "복원"
+      }, function () {
+        var def = WM.DEFAULT_TEMPLATES.find(function (x) { return x.id === id; });
+        var defIdx = WM.CHECKLIST_TEMPLATES.findIndex(function (x) { return x.id === id; });
+        if (def && defIdx !== -1) {
+          WM.CHECKLIST_TEMPLATES[defIdx] = JSON.parse(JSON.stringify(def));
+          WM.saveTemplates();
+          WM.toast("기본 템플릿으로 복원했습니다.");
+        }
+        App.tplEdit = null;
+        rerenderKeepScroll();
+      });
     } else if (act === "export") {
       var blob = new Blob([JSON.stringify(App.tasks, null, 2)], { type: "application/json" });
       var url = URL.createObjectURL(blob);
@@ -424,6 +521,44 @@
         WM.toast("샘플 데이터를 생성했습니다.");
         rerenderCurrent();
       });
+    } else if (act === "comment-add") {
+      var cmtInput = document.getElementById("comment-input");
+      var cmtText = cmtInput ? cmtInput.value.trim() : "";
+      if (!cmtText) { if (cmtInput) cmtInput.focus(); return; }
+      var cmtTask = getTask(id);
+      if (!cmtTask) return;
+      updateTask(id, {
+        comments: (cmtTask.comments || []).concat([{ id: WM.uid(), text: cmtText, createdAt: new Date().toISOString() }])
+      });
+      WM.toast("메모가 등록되었습니다.");
+      rerenderKeepScroll();
+      var cmtAgain = document.getElementById("comment-input");
+      if (cmtAgain) cmtAgain.focus();
+    } else if (act === "comment-remove") {
+      var cmtCid = el.dataset.cid;
+      var cmtTask2 = getTask(id);
+      if (!cmtTask2) return;
+      WM.confirmDialog({
+        title: "메모를 삭제할까요?",
+        description: "삭제한 메모는 복구할 수 없습니다.",
+        confirmLabel: "삭제", danger: true
+      }, function () {
+        updateTask(id, {
+          comments: (cmtTask2.comments || []).filter(function (c) { return c.id !== cmtCid; })
+        });
+        WM.toast("메모가 삭제되었습니다.");
+        rerenderKeepScroll();
+      });
+    } else if (act === "cal-prev" || act === "cal-next") {
+      var calD = new Date(App.cal.y, App.cal.m + (act === "cal-prev" ? -1 : 1), 1);
+      App.cal = { y: calD.getFullYear(), m: calD.getMonth() };
+      render();
+    } else if (act === "cal-today") {
+      var calNow = new Date();
+      App.cal = { y: calNow.getFullYear(), m: calNow.getMonth() };
+      render();
+    } else if (act === "cal-open") {
+      location.hash = "#/task/" + id;
     } else if (act === "menu-open") {
       document.getElementById("sidebar").classList.add("open");
       document.getElementById("drawer-dim").classList.add("show");
@@ -462,12 +597,27 @@
       var save = document.querySelector("[data-cl='edit-save']");
       if (save) save.click();
     }
+    if (e.key === "Enter" && e.target.matches("[data-tpl-add-input]")) {
+      e.preventDefault();
+      var tplAddBtn = document.querySelector("[data-action='tpl-item-add'][data-id='" + e.target.dataset.id + "']");
+      if (tplAddBtn) tplAddBtn.click();
+    }
+    if (e.key === "Enter" && e.target.matches("[data-tpl-edit-input]")) {
+      e.preventDefault();
+      var tplSaveBtn = document.querySelector("[data-action='tpl-item-save']");
+      if (tplSaveBtn) tplSaveBtn.click();
+    }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && e.target.id === "comment-input") {
+      e.preventDefault();
+      var cmtBtn = document.querySelector("[data-action='comment-add']");
+      if (cmtBtn) cmtBtn.click();
+    }
     if (e.key === "Escape") {
       if (document.querySelector("[data-cl-edit-input]")) {
         var cancel = document.querySelector("[data-cl='edit-cancel']");
         if (cancel) cancel.click();
       } else if (App.form) {
-        closeForm();
+        requestCloseForm();
       }
     }
   });
@@ -483,7 +633,15 @@
   /* ---- 초기화 ---- */
   window.addEventListener("hashchange", render);
 
-  document.getElementById("header-date").textContent = WM.formatFullToday();
+  /* 헤더 날짜 + 시계 (hh:mm) */
+  function updateHeaderClock() {
+    var d = new Date();
+    document.getElementById("header-date").textContent =
+      WM.formatFullToday() + " · " +
+      String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+  updateHeaderClock();
+  setInterval(updateHeaderClock, 1000);
   WM.hydrateIcons(document);
   App.tasks = WM.loadTasks();
   if (!location.hash) location.hash = "#/dashboard";

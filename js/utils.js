@@ -57,6 +57,16 @@ WM.formatFullToday = function () {
   return d.getFullYear() + "년 " + (d.getMonth() + 1) + "월 " + d.getDate() + "일 " + DOW[d.getDay()] + "요일";
 };
 
+/** 메모용 "6월 12일 (금) 14:32" — 올해가 아니면 연도 포함 */
+WM.formatDateTime = function (iso) {
+  if (!iso) return "-";
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return "-";
+  var prefix = d.getFullYear() !== new Date().getFullYear() ? d.getFullYear() + "년 " : "";
+  return prefix + (d.getMonth() + 1) + "월 " + d.getDate() + "일 (" + DOW[d.getDay()] + ") " +
+    String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+};
+
 /* ---- 표시 ---- */
 WM.formatAmount = function (n) {
   if (n == null || isNaN(n)) return "-";
