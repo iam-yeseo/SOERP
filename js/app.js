@@ -9,7 +9,9 @@
     form: null,          // { values, editId, snapshot } 또는 null
     clEditing: null,     // 체크리스트 인라인 수정 중인 항목 id
     cal: null,           // 달력 { y, m } (m: 0-based)
-    tplEdit: null        // 템플릿 인라인 수정 상태 { id, meta?, item? }
+    tplEdit: null,       // 템플릿 인라인 수정 상태 { id, meta?, item? }
+    bids: [],            // B2G(나라장터) 입찰 목록 (Supabase b2g_bids)
+    bidForm: null        // B2G 추가/수정 폼 상태 { values, editId, snapshot } 또는 null
   };
   WM.App = App;
 
@@ -81,8 +83,8 @@
       view.innerHTML = WM.renderCalendar(App.tasks, App.cal.y, App.cal.m);
     } else if (r.page === "templates") {
       view.innerHTML = WM.renderTemplates(App.tplEdit);
-    } else if (r.page === "narajangteo") {
-      view.innerHTML = WM.renderNarajangteo();
+    } else if (r.page === "b2g") {
+      view.innerHTML = WM.renderB2G(App.bids);
     } else if (r.page === "settings") {
       view.innerHTML = WM.renderSettings(App.tasks);
       bindSettings();
@@ -121,7 +123,7 @@
     { href: "#/tasks", page: "tasks", label: "Tasks", icon: "list" },
     { href: "#/calendar", page: "calendar", label: "Calendar", icon: "calendar" },
     { href: "#/templates", page: "templates", label: "Templates", icon: "filestack" },
-    { href: "#/narajangteo", page: "narajangteo", label: "나라장터", icon: "gavel" },
+    { href: "#/b2g", page: "b2g", label: "B2G", icon: "gavel" },
     { href: "#/settings", page: "settings", label: "Settings", icon: "settings" }
   ];
 
@@ -427,6 +429,116 @@
     });
   }
 
+  /* ---- B2G(나라장터) 폼 ---- */
+  function getBid(id) {
+    return App.bids.find(function (b) { return b.id === id; });
+  }
+
+  function openBidForm(editId) {
+    var values;
+    if (editId) {
+      var b = getBid(editId);
+      if (!b) return;
+      values = JSON.parse(JSON.stringify(b));
+    } else {
+      values = WM.emptyBid();
+    }
+    App.bidForm = { values: values, editId: editId || null, snapshot: JSON.stringify(values) };
+    paintBidForm();
+  }
+
+  function paintBidForm() {
+    document.getElementById("modal-root").innerHTML =
+      WM.renderB2GForm(App.bidForm.values, !!App.bidForm.editId);
+    bindBidFormFields();
+  }
+
+  function closeBidForm() {
+    App.bidForm = null;
+    document.getElementById("modal-root").innerHTML = "";
+  }
+
+  function requestCloseBidForm() {
+    if (!App.bidForm) return;
+    if (JSON.stringify(App.bidForm.values) !== App.bidForm.snapshot) {
+      WM.confirmDialog({
+        title: "정말 닫으시겠어요?",
+        description: "입력된 내용이 있습니다. 지금 닫으면 작성 중인 내용이 저장되지 않습니다.",
+        confirmLabel: "닫기", cancelLabel: "계속 작성", danger: true
+      }, closeBidForm);
+    } else {
+      closeBidForm();
+    }
+  }
+
+  function bindBidFormFields() {
+    var v = App.bidForm.values;
+    function bind(id, key) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener("input", function () { v[key] = el.value; });
+    }
+    bind("b-title", "title");
+    bind("b-bidDate", "bidDate");
+    bind("b-agency", "agency");
+    bind("b-followup", "followup");
+    bind("b-note", "note");
+    var rs = document.getElementById("b-result");
+    if (rs) rs.addEventListener("change", function () { v.result = rs.value; });
+
+    [["b-baseAmount", "baseAmount"], ["b-bidAmount", "bidAmount"], ["b-awardAmount", "awardAmount"]].forEach(function (pair) {
+      var amt = document.getElementById(pair[0]);
+      if (!amt) return;
+      amt.addEventListener("input", function () {
+        var digits = amt.value.replace(/[^0-9]/g, "");
+        if (!digits) { amt.value = ""; v[pair[1]] = undefined; return; }
+        var n = Number(digits);
+        amt.value = n.toLocaleString("ko-KR");
+        v[pair[1]] = n;
+      });
+    });
+  }
+
+  async function submitBidForm() {
+    var v = App.bidForm.values;
+    if (!v.title || !v.title.trim()) {
+      var err = document.getElementById("b-title-error");
+      if (err) err.style.display = "block";
+      var ti = document.getElementById("b-title");
+      if (ti) { ti.focus(); ti.classList.add("shake"); setTimeout(function () { ti.classList.remove("shake"); }, 350); }
+      return;
+    }
+    var clean = Object.assign({}, v, { title: v.title.trim() });
+    ["bidDate", "agency", "result", "followup", "note"].forEach(function (k) {
+      if (typeof clean[k] === "string") { clean[k] = clean[k].trim(); }
+    });
+
+    var isEdit = !!App.bidForm.editId;
+    var submitBtn = document.querySelector("[data-action='b2g-form-submit']");
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "저장 중..."; }
+    function restoreBtn() {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isEdit ? "수정 저장" : "공고 등록"; }
+    }
+
+    try {
+      if (isEdit) {
+        var saved = await WM.b2gApi.updateBid(App.bidForm.editId, clean);
+        App.bids = App.bids.map(function (b) { return b.id === saved.id ? saved : b; });
+        WM.toast("공고가 수정되었습니다.");
+      } else {
+        var created = await WM.b2gApi.createBid(clean);
+        App.bids.unshift(created);
+        WM.toast("공고가 등록되었습니다.");
+      }
+    } catch (e) {
+      console.error("공고 저장 실패", e);
+      WM.toast("저장에 실패했습니다. 네트워크를 확인해주세요.", "error");
+      restoreBtn();
+      return;
+    }
+    closeBidForm();
+    rerenderCurrent();
+  }
+
   /* ---- 전역 이벤트 위임 ---- */
   document.addEventListener("click", function (e) {
     // 체크리스트 버튼
@@ -717,6 +829,33 @@
       render();
     } else if (act === "cal-open") {
       location.hash = "#/task/" + id;
+    } else if (act === "b2g-open-new") {
+      openBidForm(null);
+    } else if (act === "b2g-open") {
+      if (e.target.closest("select, button, a, input, [data-stop]")) return;
+      openBidForm(id);
+    } else if (act === "b2g-form-close") {
+      requestCloseBidForm();
+    } else if (act === "b2g-form-submit") {
+      submitBidForm();
+    } else if (act === "b2g-delete") {
+      e.stopPropagation();
+      var bidDel = getBid(id);
+      if (!bidDel) return;
+      WM.confirmDialog({
+        title: "공고를 삭제할까요?",
+        description: '"' + bidDel.title + '"\n삭제한 공고는 복구할 수 없습니다.',
+        confirmLabel: "삭제", danger: true
+      }, function () {
+        WM.b2gApi.deleteBid(id).then(function () {
+          App.bids = App.bids.filter(function (x) { return x.id !== id; });
+          WM.toast("공고가 삭제되었습니다.");
+          rerenderKeepScroll();
+        }).catch(function (err) {
+          console.error("공고 삭제 실패", err);
+          WM.toast("삭제에 실패했습니다. 네트워크를 확인해주세요.", "error");
+        });
+      });
     } else if (act === "menu-open") {
       document.getElementById("sidebar").classList.add("open");
       document.getElementById("drawer-dim").classList.add("show");
@@ -758,6 +897,7 @@
     if (e.ctrlKey || e.metaKey || e.altKey) return false;
     if (isTypingTarget(e.target)) return false;
     if (App.form) return false;                              // 업무 등록/수정 모달
+    if (App.bidForm) return false;                           // B2G 공고 등록/수정 모달
     if (document.getElementById("confirm-root").innerHTML) return false; // 확인 모달
 
     var key = e.key.toLowerCase();
@@ -815,12 +955,19 @@
       var cmtBtn = document.querySelector("[data-action='comment-add']");
       if (cmtBtn) cmtBtn.click();
     }
+    if (e.key === "Enter" && e.target.matches("#b-title, #b-agency, #b-followup, #b-note")) {
+      e.preventDefault();
+      var bSubmit = document.querySelector("[data-action='b2g-form-submit']");
+      if (bSubmit) bSubmit.click();
+    }
     if (e.key === "Escape") {
       if (document.querySelector("[data-cl-edit-input]")) {
         var cancel = document.querySelector("[data-cl='edit-cancel']");
         if (cancel) cancel.click();
       } else if (App.form) {
         requestCloseForm();
+      } else if (App.bidForm) {
+        requestCloseBidForm();
       }
     }
   });
@@ -861,6 +1008,10 @@
       App.ready = true;
       backup();
       render();
+      // B2G 입찰 목록은 별도로 불러옴 (실패해도 업무 화면에는 영향 없음)
+      WM.b2gApi.getBids()
+        .then(function (bids) { App.bids = bids; render(); })
+        .catch(function (e) { console.error("B2G 입찰 목록을 불러오지 못했습니다.", e); });
     })
     .catch(function (e) {
       console.error("업무 데이터를 불러오지 못했습니다.", e);

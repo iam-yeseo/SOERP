@@ -129,17 +129,19 @@ WM.renderDashboard = function (tasks) {
     "</div>";
 };
 
-/** 대시보드용 나라장터 간략 요약 (업무 스케줄과 분리) */
+/** 대시보드용 B2G 간략 요약 (업무 스케줄과 분리, Supabase 데이터) */
 function naraDashCard() {
-  if (!WM.naraStats) return "";
-  var n = WM.naraStats();
-  return '<div class="card section-card"><h2 class="sec-title"><span class="ic">' + WM.icon("gavel", 15) + "</span>나라장터 입찰 현황" +
-      "<a class='note' href='#/narajangteo' style='margin-left:auto;color:var(--brand-600)'>전체 보기 →</a></h2>" +
+  var bids = (WM.App && Array.isArray(WM.App.bids)) ? WM.App.bids : [];
+  var won = bids.filter(function (b) { return b.result === "낙찰"; }).length;
+  var pending = bids.filter(function (b) { return !b.result; }).length;
+  var followup = bids.filter(function (b) { return b.followup; }).length;
+  return '<div class="card section-card"><h2 class="sec-title"><span class="ic">' + WM.icon("gavel", 15) + "</span>B2G 입찰 현황" +
+      "<a class='note' href='#/b2g' style='margin-left:auto;color:var(--brand-600)'>전체 보기 →</a></h2>" +
     '<ul class="stat-list">' +
-      "<li><span>전체 공고</span><span class='v'>" + n.total + "건</span></li>" +
-      "<li><span>낙찰</span><span class='v'>" + n.won + "건</span></li>" +
-      "<li><span>진행중</span><span class='v'>" + n.pending + "건</span></li>" +
-      "<li><span>후속업무</span><span class='v'>" + n.followup + "건</span></li>" +
+      "<li><span>전체 공고</span><span class='v'>" + bids.length + "건</span></li>" +
+      "<li><span>낙찰</span><span class='v'>" + won + "건</span></li>" +
+      "<li><span>진행중</span><span class='v'>" + pending + "건</span></li>" +
+      "<li><span>후속업무</span><span class='v'>" + followup + "건</span></li>" +
     "</ul></div>";
 }
 
