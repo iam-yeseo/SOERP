@@ -11,7 +11,11 @@
     cal: null,           // 달력 { y, m } (m: 0-based)
     tplEdit: null,       // 템플릿 인라인 수정 상태 { id, meta?, item? }
     bids: [],            // B2G(나라장터) 입찰 목록 (Supabase b2g_bids)
-    bidForm: null        // B2G 추가/수정 폼 상태 { values, editId, snapshot } 또는 null
+    bidForm: null,       // B2G 추가/수정 폼 상태 { values, editId, snapshot } 또는 null
+    contacts: [],        // 연락처 목록 (Supabase contacts)
+    contactFilter: { q: "", client: "all" },
+    contactForm: null,   // 연락처 폼 상태 { values, editId, snapshot, newFile, previewUrl, imageRemoved }
+    contactDetail: null  // 상세 팝업으로 열려 있는 연락처 id
   };
   WM.App = App;
 
@@ -85,6 +89,10 @@
       view.innerHTML = WM.renderTemplates(App.tplEdit);
     } else if (r.page === "b2g") {
       view.innerHTML = WM.renderB2G(App.bids);
+    } else if (r.page === "contacts") {
+      view.innerHTML = WM.renderContactsShell(App, App.contacts.length);
+      refreshContactList();
+      bindContactFilters();
     } else if (r.page === "settings") {
       view.innerHTML = WM.renderSettings(App.tasks);
       bindSettings();
@@ -124,6 +132,7 @@
     { href: "#/calendar", page: "calendar", label: "Calendar", icon: "calendar" },
     { href: "#/templates", page: "templates", label: "Templates", icon: "filestack" },
     { href: "#/b2g", page: "b2g", label: "B2G", icon: "gavel" },
+    { href: "#/contacts", page: "contacts", label: "Contact", icon: "contact" },
     { href: "#/settings", page: "settings", label: "Settings", icon: "settings" }
   ];
 
@@ -539,6 +548,213 @@
     rerenderCurrent();
   }
 
+  /* ---- 연락처 (Contact) ---- */
+  function getContact(id) {
+    return App.contacts.find(function (c) { return c.id === id; });
+  }
+
+  function refreshContactList() {
+    var el = document.getElementById("contact-list");
+    if (el) el.innerHTML = WM.renderContactList(App, App.contacts);
+  }
+
+  function bindContactFilters() {
+    var q = document.getElementById("contact-q");
+    if (q) q.addEventListener("input", function () { App.contactFilter.q = q.value; refreshContactList(); });
+    var cl = document.getElementById("contact-client");
+    if (cl) cl.addEventListener("change", function () { App.contactFilter.client = cl.value; refreshContactList(); });
+  }
+
+  function emptyContact() {
+    return { clientName: "", name: "", position: "", phonePersonal: "", phoneOffice: "",
+      phoneOther: "", siteName: "", memo: "", imagePath: "" };
+  }
+
+  /** Storage 이미지를 서명 URL로 불러와 컨테이너에 표시 */
+  function loadContactImage(containerId, path) {
+    if (!path) return;
+    WM.contactApi.getImageUrl(path).then(function (url) {
+      var box = document.getElementById(containerId);
+      if (box) box.innerHTML = '<img class="ct-img" src="' + url + '" alt="명함 이미지" />';
+    }).catch(function (e) {
+      console.error("명함 이미지 로딩 실패", e);
+      var box = document.getElementById(containerId);
+      if (box) box.innerHTML = '<p class="set-note" style="margin:0">명함 이미지를 불러오지 못했습니다.</p>';
+    });
+  }
+
+  /* -- 상세 팝업 -- */
+  function openContactDetail(id) {
+    var c = getContact(id);
+    if (!c) return;
+    App.contactDetail = id;
+    document.getElementById("modal-root").innerHTML = WM.renderContactDetail(c);
+    loadContactImage("contact-detail-img", c.imagePath);
+  }
+
+  function closeContactDetail() {
+    App.contactDetail = null;
+    document.getElementById("modal-root").innerHTML = "";
+  }
+
+  /* -- 등록/수정 폼 -- */
+  function openContactForm(editId) {
+    var values;
+    if (editId) {
+      var c = getContact(editId);
+      if (!c) return;
+      values = JSON.parse(JSON.stringify(c));
+    } else {
+      values = emptyContact();
+    }
+    App.contactDetail = null;
+    App.contactForm = { values: values, editId: editId || null, snapshot: JSON.stringify(values),
+      newFile: null, previewUrl: null, imageRemoved: false };
+    paintContactForm();
+  }
+
+  function paintContactForm(repaint) {
+    document.getElementById("modal-root").innerHTML =
+      WM.renderContactForm(App.contactForm, !!App.contactForm.editId);
+    if (repaint) {
+      var dimEl = document.querySelector("#modal-root .modal-dim");
+      if (dimEl) {
+        dimEl.style.animation = "none";
+        var modalEl = dimEl.querySelector(".modal");
+        if (modalEl) modalEl.style.animation = "none";
+      }
+    }
+    bindContactFormFields();
+    if (!App.contactForm.previewUrl && App.contactForm.values.imagePath) {
+      loadContactImage("contact-form-img", App.contactForm.values.imagePath);
+    }
+  }
+
+  function closeContactForm() {
+    if (App.contactForm && App.contactForm.previewUrl) URL.revokeObjectURL(App.contactForm.previewUrl);
+    App.contactForm = null;
+    document.getElementById("modal-root").innerHTML = "";
+  }
+
+  function contactFormDirty() {
+    var f = App.contactForm;
+    if (!f) return false;
+    return JSON.stringify(f.values) !== f.snapshot || !!f.newFile || f.imageRemoved;
+  }
+
+  function requestCloseContactForm() {
+    if (!App.contactForm) return;
+    if (contactFormDirty()) {
+      WM.confirmDialog({
+        title: "정말 닫으시겠어요?",
+        description: "입력된 내용이 있습니다. 지금 닫으면 작성 중인 내용이 저장되지 않습니다.",
+        confirmLabel: "닫기", cancelLabel: "계속 작성", danger: true
+      }, closeContactForm);
+    } else {
+      closeContactForm();
+    }
+  }
+
+  function bindContactFormFields() {
+    var v = App.contactForm.values;
+    ["name", "position", "clientName", "phonePersonal", "phoneOffice", "phoneOther", "siteName", "memo"]
+      .forEach(function (key) {
+        var el = document.getElementById("c-" + key);
+        if (el) el.addEventListener("input", function () { v[key] = el.value; });
+      });
+    var file = document.getElementById("contact-image-file");
+    if (file) file.addEventListener("change", function () {
+      var f = file.files && file.files[0];
+      if (!f) return;
+      if (!/^image\//.test(f.type)) { WM.toast("이미지 파일만 업로드할 수 있습니다.", "error"); return; }
+      if (f.size > 5 * 1024 * 1024) { WM.toast("이미지는 5MB 이하만 업로드할 수 있습니다.", "error"); return; }
+      if (App.contactForm.previewUrl) URL.revokeObjectURL(App.contactForm.previewUrl);
+      App.contactForm.newFile = f;
+      App.contactForm.previewUrl = URL.createObjectURL(f);
+      App.contactForm.imageRemoved = false;
+      paintContactForm(true);
+    });
+  }
+
+  async function submitContactForm() {
+    var f = App.contactForm;
+    var v = f.values;
+    if (!v.name || !v.name.trim()) {
+      var err = document.getElementById("c-name-error");
+      if (err) err.style.display = "block";
+      var ni = document.getElementById("c-name");
+      if (ni) { ni.focus(); ni.classList.add("shake"); setTimeout(function () { ni.classList.remove("shake"); }, 350); }
+      return;
+    }
+    var clean = Object.assign({}, v, { name: v.name.trim() });
+    ["clientName", "position", "phonePersonal", "phoneOffice", "phoneOther", "siteName", "memo"].forEach(function (k) {
+      if (typeof clean[k] === "string") clean[k] = clean[k].trim();
+    });
+
+    var isEdit = !!f.editId;
+    var submitBtn = document.querySelector("[data-action='contact-form-submit']");
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "저장 중..."; }
+    function restoreBtn() {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isEdit ? "수정 저장" : "연락처 등록"; }
+    }
+
+    var prevImagePath = isEdit ? (getContact(f.editId) || {}).imagePath : "";
+
+    try {
+      // 1) 새 이미지가 있으면 먼저 업로드
+      if (f.newFile) {
+        clean.imagePath = await WM.contactApi.uploadImage(f.newFile);
+      } else if (f.imageRemoved) {
+        clean.imagePath = "";
+      }
+
+      // 2) DB 저장
+      var saved;
+      if (isEdit) {
+        saved = await WM.contactApi.updateContact(f.editId, clean);
+        App.contacts = App.contacts.map(function (c) { return c.id === saved.id ? saved : c; });
+        WM.toast("연락처가 수정되었습니다.");
+      } else {
+        saved = await WM.contactApi.createContact(clean);
+        App.contacts.unshift(saved);
+        WM.toast("연락처가 등록되었습니다.");
+      }
+
+      // 3) 교체/제거된 기존 이미지 정리 (실패해도 무시)
+      if (prevImagePath && prevImagePath !== saved.imagePath) {
+        WM.contactApi.deleteImage(prevImagePath);
+      }
+    } catch (e) {
+      console.error("연락처 저장 실패", e);
+      WM.toast("저장에 실패했습니다. 네트워크를 확인해주세요.", "error");
+      restoreBtn();
+      return;
+    }
+    closeContactForm();
+    rerenderCurrent();
+  }
+
+  function deleteContactWithConfirm(id, fromDetail) {
+    var c = getContact(id);
+    if (!c) return;
+    WM.confirmDialog({
+      title: "연락처를 삭제할까요?",
+      description: '"' + c.name + (c.clientName ? " (" + c.clientName + ")" : "") + '"\n삭제한 연락처는 복구할 수 없습니다. 명함 이미지도 함께 삭제됩니다.',
+      confirmLabel: "삭제", danger: true
+    }, function () {
+      WM.contactApi.deleteContact(id).then(function () {
+        if (c.imagePath) WM.contactApi.deleteImage(c.imagePath);
+        App.contacts = App.contacts.filter(function (x) { return x.id !== id; });
+        WM.toast("연락처가 삭제되었습니다.");
+        if (fromDetail) closeContactDetail();
+        rerenderKeepScroll();
+      }).catch(function (err) {
+        console.error("연락처 삭제 실패", err);
+        WM.toast("삭제에 실패했습니다. 네트워크를 확인해주세요.", "error");
+      });
+    });
+  }
+
   /* ---- 전역 이벤트 위임 ---- */
   document.addEventListener("click", function (e) {
     // 체크리스트 버튼
@@ -856,6 +1072,36 @@
           WM.toast("삭제에 실패했습니다. 네트워크를 확인해주세요.", "error");
         });
       });
+    } else if (act === "contact-open-new") {
+      openContactForm(null);
+    } else if (act === "contact-open") {
+      if (e.target.closest("select, button, a, input, [data-stop]")) return;
+      openContactDetail(id);
+    } else if (act === "contact-detail-close") {
+      closeContactDetail();
+    } else if (act === "contact-edit") {
+      openContactForm(id);
+    } else if (act === "contact-delete") {
+      e.stopPropagation();
+      deleteContactWithConfirm(id, !!el.dataset.fromDetail);
+    } else if (act === "contact-form-close") {
+      requestCloseContactForm();
+    } else if (act === "contact-form-submit") {
+      submitContactForm();
+    } else if (act === "contact-image-pick") {
+      var cif = document.getElementById("contact-image-file");
+      if (cif) cif.click();
+    } else if (act === "contact-image-remove") {
+      if (App.contactForm.previewUrl) {
+        URL.revokeObjectURL(App.contactForm.previewUrl);
+        App.contactForm.previewUrl = null;
+        App.contactForm.newFile = null;
+      }
+      if (App.contactForm.values.imagePath) {
+        App.contactForm.imageRemoved = true;
+        App.contactForm.values.imagePath = "";
+      }
+      paintContactForm(true);
     } else if (act === "menu-open") {
       document.getElementById("sidebar").classList.add("open");
       document.getElementById("drawer-dim").classList.add("show");
@@ -898,6 +1144,8 @@
     if (isTypingTarget(e.target)) return false;
     if (App.form) return false;                              // 업무 등록/수정 모달
     if (App.bidForm) return false;                           // B2G 공고 등록/수정 모달
+    if (App.contactForm) return false;                       // 연락처 등록/수정 모달
+    if (App.contactDetail) return false;                     // 연락처 상세 팝업
     if (document.getElementById("confirm-root").innerHTML) return false; // 확인 모달
 
     var key = e.key.toLowerCase();
@@ -968,6 +1216,10 @@
         requestCloseForm();
       } else if (App.bidForm) {
         requestCloseBidForm();
+      } else if (App.contactForm) {
+        requestCloseContactForm();
+      } else if (App.contactDetail) {
+        closeContactDetail();
       }
     }
   });
@@ -1012,6 +1264,10 @@
       WM.b2gApi.getBids()
         .then(function (bids) { App.bids = bids; render(); })
         .catch(function (e) { console.error("B2G 입찰 목록을 불러오지 못했습니다.", e); });
+      // 연락처 목록도 별도로 불러옴
+      WM.contactApi.getContacts()
+        .then(function (contacts) { App.contacts = contacts; if (route().page === "contacts") render(); })
+        .catch(function (e) { console.error("연락처 목록을 불러오지 못했습니다.", e); });
     })
     .catch(function (e) {
       console.error("업무 데이터를 불러오지 못했습니다.", e);

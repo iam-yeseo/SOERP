@@ -518,6 +518,162 @@ WM.renderNotFound = function () {
     '<a href="#/dashboard" class="btn btn-primary">대시보드로 이동</a></div>';
 };
 
+/* ---- 연락처 (Contact) ---- */
+
+/** 연락처 목록 셸: 검색 + 거래처 필터 + 리스트 컨테이너 */
+WM.renderContactsShell = function (state, total) {
+  var f = state.contactFilter || { q: "", client: "all" };
+  var clients = {};
+  (state.contacts || []).forEach(function (c) { if (c.clientName) clients[c.clientName] = 1; });
+  var clientOpts = '<option value="all">거래처: 전체</option>' + Object.keys(clients).sort().map(function (name) {
+    return '<option value="' + WM.esc(name) + '"' + (f.client === name ? " selected" : "") + '>' + WM.esc(name) + "</option>";
+  }).join("");
+
+  return '<div class="page-head page-head-row"><div><h1>연락처</h1>' +
+      '<p id="contact-count-line">전체 ' + total + "건</p></div>" +
+      '<button type="button" class="btn btn-primary" data-action="contact-open-new">' + WM.icon("plus", 16) + "새 연락처 추가</button></div>" +
+    '<div class="card filters">' +
+      '<div class="filter-q"><span class="search-icon">' + WM.icon("search", 15) + '</span>' +
+        '<input id="contact-q" placeholder="이름·거래처·직급·연락처·현장명·메모 검색" value="' + WM.esc(f.q) + '" aria-label="연락처 검색" /></div>' +
+      '<select id="contact-client" aria-label="거래처 필터">' + clientOpts + "</select>" +
+    "</div>" +
+    '<div id="contact-list"></div>';
+};
+
+/** 연락처 필터링 */
+WM.filterContacts = function (contacts, f) {
+  f = f || { q: "", client: "all" };
+  var q = (f.q || "").trim().toLowerCase();
+  return contacts.filter(function (c) {
+    if (f.client !== "all" && c.clientName !== f.client) return false;
+    if (!q) return true;
+    return [c.name, c.clientName, c.position, c.phonePersonal, c.phoneOffice, c.phoneOther, c.siteName, c.memo]
+      .some(function (v) { return v && String(v).toLowerCase().indexOf(q) !== -1; });
+  });
+};
+
+/** 연락처 리스트 (테이블형) */
+WM.renderContactList = function (state, contacts) {
+  var visible = WM.filterContacts(contacts, state.contactFilter);
+  var line = document.getElementById("contact-count-line");
+  if (line) line.textContent = "전체 " + contacts.length + "건 · 표시 " + visible.length + "건";
+
+  if (!contacts.length) return WM.emptyState("등록된 연락처가 없습니다.", "'새 연락처 추가' 버튼으로 첫 연락처를 등록하세요.");
+  if (!visible.length) return WM.emptyState("검색/필터 조건에 맞는 연락처가 없습니다.", "검색어나 필터를 변경해보세요.");
+
+  var rows = visible.map(function (c) {
+    var phones = [];
+    if (c.phonePersonal) phones.push(WM.icon("smartphone", 12) + WM.esc(c.phonePersonal));
+    if (c.phoneOffice) phones.push(WM.icon("phone", 12) + WM.esc(c.phoneOffice));
+    if (c.phoneOther) phones.push(WM.icon("plus", 12) + WM.esc(c.phoneOther));
+    return '<tr data-action="contact-open" data-id="' + c.id + '">' +
+      '<td><p class="t-title">' + WM.esc(c.name) + "</p>" +
+        (c.position ? '<p class="t-sub">' + WM.esc(c.position) + "</p>" : "") + "</td>" +
+      '<td class="small">' + (c.clientName ? WM.esc(c.clientName) : "-") + "</td>" +
+      '<td class="small"><div class="ct-phones">' + (phones.length ? phones.map(function (p) { return "<span>" + p + "</span>"; }).join("") : "-") + "</div></td>" +
+      '<td class="small">' + (c.siteName ? WM.esc(c.siteName) : "-") + "</td>" +
+      '<td class="small ct-memo">' + (c.memo ? WM.esc(c.memo) : "-") + "</td>" +
+      '<td class="center">' + (c.imagePath ? '<span class="ct-has-img">' + WM.icon("image", 15) + "</span>" : '<span class="tc-none">-</span>') + "</td>" +
+      '<td data-stop="1"><button type="button" class="row-del" data-action="contact-delete" data-id="' + c.id + '" aria-label="연락처 삭제">' + WM.icon("trash", 15) + "</button></td>" +
+    "</tr>";
+  }).join("");
+
+  return '<div class="card table-wrap"><table class="task-table contact-table"><thead><tr>' +
+    "<th>이름/직급</th><th>거래처</th><th>연락처</th><th>현장명</th><th>메모</th><th>명함</th><th></th></tr></thead><tbody>" +
+    rows + "</tbody></table></div>";
+};
+
+/** 연락처 상세 팝업 (모달) */
+WM.renderContactDetail = function (c) {
+  function row(label, value) {
+    return '<div class="row"><dt>' + label + "</dt><dd>" + value + "</dd></div>";
+  }
+  function tel(v) {
+    if (!v) return "-";
+    return '<a href="tel:' + WM.esc(v.replace(/[^0-9+]/g, "")) + '" data-stop="1">' + WM.esc(v) + "</a>";
+  }
+  var img = c.imagePath
+    ? '<div class="ct-img-box" id="contact-detail-img">' + WM.renderLoading("명함 이미지를 불러오는 중...") + "</div>"
+    : "";
+
+  return '<div class="modal-dim" data-contact-detail-dim>' +
+    '<div class="modal">' +
+      '<div class="modal-head"><h2>' + WM.esc(c.name) +
+        (c.position ? ' <span class="ct-head-sub">' + WM.esc(c.position) + "</span>" : "") + "</h2>" +
+        '<button type="button" class="icon-btn" data-action="contact-detail-close" aria-label="닫기">' + WM.icon("x", 18) + "</button></div>" +
+      '<div class="modal-body">' +
+        img +
+        '<dl class="info-rows">' +
+          row("거래처", c.clientName ? WM.esc(c.clientName) : "-") +
+          row("연락처 (개인)", tel(c.phonePersonal)) +
+          row("연락처 (유선)", tel(c.phoneOffice)) +
+          row("연락처 (기타)", tel(c.phoneOther)) +
+          row("현장명", c.siteName ? WM.esc(c.siteName) : "-") +
+          row("등록일", WM.formatKorean(c.createdAt)) +
+        "</dl>" +
+        (c.memo ? '<div class="ct-memo-box"><p class="field-label" style="margin-bottom:4px">메모</p><p>' + WM.esc(c.memo).replace(/\n/g, "<br>") + "</p></div>" : "") +
+      "</div>" +
+      '<div class="modal-foot">' +
+        '<button type="button" class="btn btn-danger-outline" data-action="contact-delete" data-id="' + c.id + '" data-from-detail="1">' + WM.icon("trash", 14) + "삭제</button>" +
+        '<span style="flex:1"></span>' +
+        '<button type="button" class="btn btn-outline" data-action="contact-detail-close">닫기</button>' +
+        '<button type="button" class="btn btn-primary" data-action="contact-edit" data-id="' + c.id + '">' + WM.icon("pencil", 14) + "수정</button>" +
+      "</div>" +
+    "</div>" +
+  "</div>";
+};
+
+/** 연락처 등록/수정 폼 모달 */
+WM.renderContactForm = function (formState, isEdit) {
+  var v = formState.values;
+  var imgPreview;
+  if (formState.previewUrl) {
+    imgPreview = '<img class="ct-img-preview" src="' + WM.esc(formState.previewUrl) + '" alt="명함 미리보기" />';
+  } else if (v.imagePath) {
+    imgPreview = '<div class="ct-img-box" id="contact-form-img">' + WM.renderLoading("기존 명함 이미지 불러오는 중...") + "</div>";
+  } else {
+    imgPreview = '<p class="set-note" style="margin:0">' + WM.icon("image", 14) + " 등록된 명함 이미지가 없습니다.</p>";
+  }
+
+  return '<div class="modal-dim" data-form-dim>' +
+    '<div class="modal">' +
+      '<div class="modal-head"><h2>' + (isEdit ? "연락처 수정" : "새 연락처 추가") + "</h2>" +
+        '<button type="button" class="icon-btn" data-action="contact-form-close" aria-label="닫기">' + WM.icon("x", 18) + "</button></div>" +
+      '<div class="modal-body">' +
+        '<div class="form-grid-3">' +
+          '<div><label class="field-label">이름 <span style="color:var(--red-500)">*</span></label>' +
+            '<input class="input" id="c-name" value="' + WM.esc(v.name || "") + '" placeholder="예: 홍길동" />' +
+            '<p class="field-error" id="c-name-error" style="display:none">이름을 입력해주세요.</p></div>' +
+          '<div><label class="field-label">직급</label><input class="input" id="c-position" value="' + WM.esc(v.position || "") + '" placeholder="예: 과장" /></div>' +
+          '<div><label class="field-label">거래처</label><input class="input" id="c-clientName" value="' + WM.esc(v.clientName || "") + '" placeholder="예: ○○건설(주)" /></div>' +
+        "</div>" +
+        '<div class="form-grid-3">' +
+          '<div><label class="field-label">연락처 (개인)</label><input class="input" id="c-phonePersonal" inputmode="tel" value="' + WM.esc(v.phonePersonal || "") + '" placeholder="예: 010-1234-5678" /></div>' +
+          '<div><label class="field-label">연락처 (유선)</label><input class="input" id="c-phoneOffice" inputmode="tel" value="' + WM.esc(v.phoneOffice || "") + '" placeholder="예: 02-123-4567" /></div>' +
+          '<div><label class="field-label">연락처 (기타)</label><input class="input" id="c-phoneOther" inputmode="tel" value="' + WM.esc(v.phoneOther || "") + '" placeholder="예: 팩스, 부서 번호 등" /></div>' +
+        "</div>" +
+        '<div><label class="field-label">현장명</label><input class="input" id="c-siteName" value="' + WM.esc(v.siteName || "") + '" placeholder="예: ○○아파트 신축 현장" /></div>' +
+        '<div><label class="field-label">메모</label><textarea class="textarea" id="c-memo" rows="3" placeholder="특이사항, 만난 계기 등">' + WM.esc(v.memo || "") + "</textarea></div>" +
+        "<div><label class='field-label'>명함 이미지</label>" +
+          '<div class="ct-upload-row">' +
+            imgPreview +
+            '<div class="ct-upload-btns">' +
+              '<button type="button" class="btn btn-outline btn-sm" data-action="contact-image-pick">' + WM.icon("upload", 14) + (v.imagePath || formState.previewUrl ? "이미지 변경" : "이미지 업로드") + "</button>" +
+              ((v.imagePath || formState.previewUrl) ? '<button type="button" class="btn btn-danger-outline btn-sm" data-action="contact-image-remove">' + WM.icon("trash", 13) + "이미지 제거</button>" : "") +
+            "</div>" +
+          "</div>" +
+          '<input type="file" id="contact-image-file" accept="image/*" style="display:none" />' +
+          '<p class="set-note">JPG·PNG 등 이미지 파일, 최대 5MB. 새 이미지 업로드 시 기존 이미지는 교체됩니다.</p>' +
+        "</div>" +
+      "</div>" +
+      '<div class="modal-foot">' +
+        '<button type="button" class="btn btn-outline" data-action="contact-form-close">취소</button>' +
+        '<button type="button" class="btn btn-primary" data-action="contact-form-submit">' + (isEdit ? "수정 저장" : "연락처 등록") + "</button>" +
+      "</div>" +
+    "</div>" +
+  "</div>";
+};
+
 /* ---- 업무 등록/수정 폼 모달 ---- */
 WM.renderTaskForm = function (formState, isEdit) {
   function opt(v, label, cur) { return '<option value="' + v + '"' + (v === cur ? " selected" : "") + ">" + label + "</option>"; }

@@ -582,3 +582,18 @@ svg { display:block; }
   .tasks-grid-3 { grid-template-columns:1fr 1fr 1fr; }
   .tpl-grid { grid-template-columns:1fr 1fr 1fr; }
 }
+
+/* ===== 연락처 (Contact) ===== */
+.contact-table td.center { text-align:center; }
+.ct-has-img { color:var(--brand-600); display:inline-flex; }
+.ct-phones { display:flex; flex-direction:column; gap:2px; }
+.ct-phones span { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.ct-memo { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ct-head-sub { font-size:13px; font-weight:500; color:var(--gray-400); margin-left:4px; }
+.ct-img-box { background:var(--gray-50); border:1px solid var(--gray-200); border-radius:10px; padding:8px; text-align:center; }
+.ct-img, .ct-img-preview { max-width:100%; max-height:320px; border-radius:8px; display:block; margin:0 auto; }
+.ct-img-preview { max-height:180px; }
+.ct-memo-box { background:var(--gray-50); border:1px solid var(--gray-100); border-radius:10px; padding:12px 14px; font-size:13px; color:var(--gray-600); line-height:1.6; margin-top:12px; }
+.ct-upload-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
+.ct-upload-row .ct-img-box { flex:1; min-width:160px; }
+.ct-upload-btns { display:flex; flex-direction:column; gap:6px; }
