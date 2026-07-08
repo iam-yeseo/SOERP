@@ -399,6 +399,85 @@
     }
   }
 
+  /* ---- 체크리스트 드래그 앤 드롭 순서 변경 ---- */
+  var clDrag = null; // { ctx, id }
+
+  function clearClDragStyles() {
+    document.querySelectorAll(".checklist li.dragging, .checklist li.drag-over-top, .checklist li.drag-over-bottom")
+      .forEach(function (li) { li.classList.remove("dragging", "drag-over-top", "drag-over-bottom"); });
+  }
+
+  function resetClDraggable() {
+    document.querySelectorAll("li[data-cl-item][draggable='true']")
+      .forEach(function (li) { li.draggable = false; });
+  }
+
+  // 그립을 잡았을 때만 드래그 시작 가능 (라벨 텍스트 선택 등 오작동 방지)
+  document.addEventListener("mousedown", function (e) {
+    var grip = e.target.closest("[data-cl-grip]");
+    if (!grip) return;
+    var li = grip.closest("li[data-cl-item]");
+    if (li) li.draggable = true;
+  });
+
+  document.addEventListener("mouseup", resetClDraggable);
+
+  document.addEventListener("dragstart", function (e) {
+    var li = e.target.closest && e.target.closest("li[data-cl-item]");
+    if (!li || !li.draggable) return;
+    clDrag = { ctx: li.dataset.ctx, id: li.dataset.clid };
+    e.dataTransfer.effectAllowed = "move";
+    try { e.dataTransfer.setData("text/plain", li.dataset.clid); } catch (err) {}
+    setTimeout(function () { li.classList.add("dragging"); }, 0);
+  });
+
+  document.addEventListener("dragover", function (e) {
+    if (!clDrag) return;
+    var li = e.target.closest && e.target.closest("li[data-cl-item]");
+    if (!li || li.dataset.ctx !== clDrag.ctx) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    var rect = li.getBoundingClientRect();
+    var isTop = e.clientY < rect.top + rect.height / 2;
+    li.parentNode.querySelectorAll("li").forEach(function (sib) {
+      if (sib !== li) sib.classList.remove("drag-over-top", "drag-over-bottom");
+    });
+    li.classList.toggle("drag-over-top", isTop);
+    li.classList.toggle("drag-over-bottom", !isTop);
+  });
+
+  document.addEventListener("drop", function (e) {
+    if (!clDrag) return;
+    var drag = clDrag;
+    clDrag = null;
+    clearClDragStyles();
+    var li = e.target.closest && e.target.closest("li[data-cl-item]");
+    if (!li || li.dataset.ctx !== drag.ctx) return;
+    e.preventDefault();
+
+    var toId = li.dataset.clid;
+    if (drag.id === toId) return;
+    var rect = li.getBoundingClientRect();
+    var before = e.clientY < rect.top + rect.height / 2;
+
+    var list = getChecklistCtx(drag.ctx);
+    if (!list) return;
+    list = list.slice();
+    var fromIdx = list.findIndex(function (c) { return c.id === drag.id; });
+    if (fromIdx === -1) return;
+    var item = list.splice(fromIdx, 1)[0];
+    var toIdx = list.findIndex(function (c) { return c.id === toId; });
+    if (toIdx === -1) return;
+    list.splice(before ? toIdx : toIdx + 1, 0, item);
+    commitChecklist(drag.ctx, list);
+  });
+
+  document.addEventListener("dragend", function () {
+    clDrag = null;
+    clearClDragStyles();
+    resetClDraggable();
+  });
+
   /* ---- 설정 페이지 바인딩 ---- */
   function bindSettings() {
     var fileInput = document.getElementById("import-file");

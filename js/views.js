@@ -224,14 +224,17 @@ WM.checklistHtml = function (items, ctx, editingId) {
   // ctx: "detail" | "form"
   var rows = items.map(function (c) {
     if (editingId === c.id) {
-      return '<li><button type="button" class="cl-check' + (c.checked ? " on" : "") + '" data-cl="toggle" data-ctx="' + ctx + '" data-clid="' + c.id + '" aria-label="체크">' + WM.icon("check", 12) + "</button>" +
+      return '<li><span class="cl-grip is-disabled" aria-hidden="true">' + WM.icon("grip", 14) + "</span>" +
+        '<button type="button" class="cl-check' + (c.checked ? " on" : "") + '" data-cl="toggle" data-ctx="' + ctx + '" data-clid="' + c.id + '" aria-label="체크">' + WM.icon("check", 12) + "</button>" +
         '<input class="cl-edit-input" data-cl-edit-input value="' + WM.esc(c.label) + '" />' +
         '<span class="cl-edit-tools">' +
           '<button type="button" class="save" data-cl="edit-save" data-ctx="' + ctx + '" data-clid="' + c.id + '" aria-label="저장">' + WM.icon("check", 15) + "</button>" +
           '<button type="button" data-cl="edit-cancel" data-ctx="' + ctx + '" aria-label="취소">' + WM.icon("x", 15) + "</button>" +
         "</span></li>";
     }
-    return '<li><button type="button" class="cl-check' + (c.checked ? " on" : "") + '" data-cl="toggle" data-ctx="' + ctx + '" data-clid="' + c.id + '" aria-label="' + (c.checked ? "체크 해제" : "체크") + '">' + WM.icon("check", 12) + "</button>" +
+    return '<li data-cl-item data-ctx="' + ctx + '" data-clid="' + c.id + '">' +
+      '<span class="cl-grip" data-cl-grip title="드래그하여 순서 변경" aria-hidden="true">' + WM.icon("grip", 14) + "</span>" +
+      '<button type="button" class="cl-check' + (c.checked ? " on" : "") + '" data-cl="toggle" data-ctx="' + ctx + '" data-clid="' + c.id + '" aria-label="' + (c.checked ? "체크 해제" : "체크") + '">' + WM.icon("check", 12) + "</button>" +
       '<span class="cl-label' + (c.checked ? " on" : "") + '">' + WM.esc(c.label) + "</span>" +
       '<span class="cl-tools">' +
         '<button type="button" data-cl="edit-start" data-ctx="' + ctx + '" data-clid="' + c.id + '" aria-label="항목 수정">' + WM.icon("pencil", 13) + "</button>" +

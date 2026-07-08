@@ -248,6 +248,13 @@ svg { display:block; }
 /* 체크리스트 */
 .checklist li { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:10px; }
 .checklist li:hover { background:var(--gray-50); }
+.cl-grip { display:flex; align-items:center; flex-shrink:0; color:var(--gray-200); cursor:grab; }
+.checklist li:hover .cl-grip { color:var(--gray-400); }
+.cl-grip:active { cursor:grabbing; }
+.cl-grip.is-disabled { visibility:hidden; cursor:default; }
+.checklist li.dragging { opacity:.45; }
+.checklist li.drag-over-top { box-shadow:0 -2px 0 0 var(--brand-400); border-radius:0 0 10px 10px; }
+.checklist li.drag-over-bottom { box-shadow:0 2px 0 0 var(--brand-400); border-radius:10px 10px 0 0; }
 .cl-check {
   width:18px; height:18px; flex-shrink:0; border:1px solid var(--gray-300); border-radius:5px;
   display:flex; align-items:center; justify-content:center; background:#fff; color:transparent; padding:0;
