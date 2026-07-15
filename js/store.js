@@ -59,7 +59,14 @@ WM.DEFAULT_FILTER = { q: "", status: "all", category: "all", priority: "all", do
 
 WM.isActive = function (t) { return t.status !== "done" && t.status !== "cancelled"; };
 
-WM.isTaskToday = function (t) { return WM.isToday(t.dueDate) || WM.isToday(t.date); };
+WM.isTaskToday = function (t) {
+  // 시작일(date)~마감일(dueDate) 사이에 오늘이 포함되면 '오늘의 업무'
+  var today = WM.todayStr();
+  var start = t.date || t.dueDate;
+  var end = t.dueDate || t.date;
+  if (!start && !end) return false;
+  return start <= today && today <= end;
+};
 
 WM.isDueWithin = function (t, days) {
   if (!WM.isActive(t)) return false;
