@@ -480,11 +480,27 @@ WM.renderTemplates = function (edit) {
 /* ---- 설정 페이지 ---- */
 WM.renderSettings = function (tasks) {
   var lastUpdated = tasks.reduce(function (max, t) { return t.updatedAt > max ? t.updatedAt : max; }, "");
+  var cats = (WM.App && Array.isArray(WM.App.archiveCats) && WM.App.archiveCats.length)
+    ? WM.App.archiveCats : WM.ARCHIVE_DEFAULT_CATEGORIES;
+  var catChips = cats.map(function (name, i) {
+    return '<span class="arc-cat-chip">' + WM.badgeArcCat(name) +
+      (cats.length > 1 ? '<button type="button" class="arc-cat-del" data-action="arc-cat-remove" data-name="' + WM.esc(name) + '" aria-label="카테고리 삭제">' + WM.icon("x", 12) + "</button>" : "") +
+    "</span>";
+  }).join("");
+
   return '<div class="settings-wrap">' +
     '<div class="page-head" style="margin:0"><h1>설정</h1><p>데이터 백업·복원과 앱 정보를 관리합니다.</p></div>' +
     '<div class="card section-card"><h2 class="sec-h">저장 방식</h2>' +
-      '<p class="storage-line"><span class="ic">' + WM.icon("database", 15) + "</span><span><b>Supabase 온라인 모드</b> — 데이터는 로그인 계정별로 온라인 데이터베이스에 저장됩니다.</span></p>" +
+      '<p class="storage-line"><span class="ic">' + WM.icon("database", 15) + "</span><span><b>온라인 동기화 중</b> — 데이터는 로그인 계정별로 온라인 데이터베이스에 저장됩니다.</span></p>" +
       '<p class="set-note">어느 기기에서나 같은 계정으로 로그인하면 동일한 데이터를 볼 수 있습니다. 업무 템플릿은 이 브라우저(localStorage)에 저장됩니다.</p>' +
+    "</div>" +
+    '<div class="card section-card"><h2 class="sec-h">아카이브 카테고리</h2>' +
+      '<div class="arc-cat-list">' + catChips + "</div>" +
+      '<div class="cl-add-row" style="max-width:360px">' +
+        '<input id="arc-cat-input" placeholder="새 카테고리 이름" maxlength="20" />' +
+        '<button type="button" class="btn btn-outline btn-sm" data-action="arc-cat-add">' + WM.icon("plus", 13) + "추가</button>" +
+      "</div>" +
+      '<p class="set-note">아카이브 업로드·검색 필터에 사용되는 분류입니다. 최소 1개 이상의 카테고리가 있어야 하며, 삭제해도 기존 아카이브의 분류는 유지됩니다.</p>' +
     "</div>" +
     '<div class="card section-card"><h2 class="sec-h">데이터 백업 / 복원</h2>' +
       '<div class="set-row">' +
@@ -502,9 +518,9 @@ WM.renderSettings = function (tasks) {
     "</div>" +
     '<div class="card section-card set-info"><h2 class="sec-h">앱 정보</h2><dl>' +
       '<div class="r"><dt>앱 이름</dt><dd>SOERP - 김소은상회(주) 업무 매니지먼트</dd></div>' +
-      '<div class="r"><dt>버전</dt><dd>0.3.0 (Supabase 연동)</dd></div>' +
+      '<div class="r"><dt>버전</dt><dd>' + WM.APP_VERSION + "</dd></div>" +
       '<div class="r"><dt>로그인 계정</dt><dd>' + WM.esc(window.currentUser && window.currentUser.email ? window.currentUser.email : "-") + "</dd></div>" +
-      '<div class="r"><dt>저장 위치</dt><dd>Supabase · tasks 테이블</dd></div>' +
+      '<div class="r"><dt>저장 위치</dt><dd>온라인</dd></div>' +
       '<div class="r"><dt>업무 데이터</dt><dd>' + tasks.length + "건</dd></div>" +
       '<div class="r"><dt>마지막 업데이트</dt><dd>' +
         (lastUpdated ? WM.formatKorean(lastUpdated) + " " + lastUpdated.slice(11, 16) : "-") + "</dd></div>" +
@@ -672,6 +688,179 @@ WM.renderContactForm = function (formState, isEdit) {
       '<div class="modal-foot">' +
         '<button type="button" class="btn btn-outline" data-action="contact-form-close">취소</button>' +
         '<button type="button" class="btn btn-primary" data-action="contact-form-submit">' + (isEdit ? "수정 저장" : "연락처 등록") + "</button>" +
+      "</div>" +
+    "</div>" +
+  "</div>";
+};
+
+/* ---- 아카이브 (Archives) ---- */
+
+/** 아카이브 카테고리 뱃지 (동적 카테고리 → 팔레트 색 순환) */
+var ARC_BADGE_PALETTE = [
+  "background:#eef2ff;color:#4f46e5", "background:#ecfdf5;color:#059669",
+  "background:#fff7ed;color:#ea580c", "background:#f5f3ff;color:#7c3aed",
+  "background:#ecfeff;color:#0891b2", "background:#fef2f2;color:#dc2626",
+  "background:#f0f9ff;color:#0284c7", "background:#f8fafc;color:#475569"
+];
+WM.badgeArcCat = function (name) {
+  var cats = (WM.App && Array.isArray(WM.App.archiveCats)) ? WM.App.archiveCats : [];
+  var idx = cats.indexOf(name);
+  if (idx === -1) idx = 7; // 목록에 없는(삭제된) 카테고리는 회색
+  var style = ARC_BADGE_PALETTE[idx % ARC_BADGE_PALETTE.length];
+  return '<span class="badge" style="' + style + '">' + WM.esc(name) + "</span>";
+};
+
+/** 아카이브 목록 셸: 전용 검색 + 카테고리 필터 + 정렬 (업무 현황 UI 스타일) */
+WM.renderArchivesShell = function (state, total) {
+  var f = state.archiveFilter || { q: "", category: "all" };
+  // 필터 옵션: 설정된 카테고리 + 데이터에만 남아있는(삭제된) 카테고리 합집합
+  var cats = (state.archiveCats || []).slice();
+  (state.archives || []).forEach(function (a) {
+    if (a.category && cats.indexOf(a.category) === -1) cats.push(a.category);
+  });
+  var catOpts = '<option value="all">카테고리: 전체</option>' + cats.map(function (c) {
+    return '<option value="' + WM.esc(c) + '"' + (f.category === c ? " selected" : "") + '>' + WM.esc(c) + "</option>";
+  }).join("");
+
+  return '<div class="page-head page-head-row"><div><h1>아카이브</h1>' +
+      '<p id="archive-count-line">전체 ' + total + "건</p></div>" +
+      '<button type="button" class="btn btn-archive" data-action="archive-open-new">' + WM.icon("plus", 16) + "새 아카이브 추가</button></div>" +
+    '<div class="card filters">' +
+      '<div class="filter-q"><span class="search-icon">' + WM.icon("search", 15) + '</span>' +
+        '<input id="archive-q" placeholder="아카이브 제목·내용 검색" value="' + WM.esc(f.q) + '" aria-label="아카이브 검색" /></div>' +
+      '<select id="archive-category" aria-label="아카이브 카테고리 필터">' + catOpts + "</select>" +
+      '<select id="archive-sort" aria-label="정렬">' +
+        '<option value="newest"' + (state.archiveSort === "newest" ? " selected" : "") + ">최신순</option>" +
+        '<option value="oldest"' + (state.archiveSort === "oldest" ? " selected" : "") + ">오래된순</option>" +
+      "</select>" +
+    "</div>" +
+    '<div id="archive-list"></div>';
+};
+
+/** 아카이브 필터링 (제목·내용 검색 + 카테고리) */
+WM.filterArchives = function (archives, f) {
+  f = f || { q: "", category: "all" };
+  var q = (f.q || "").trim().toLowerCase();
+  return archives.filter(function (a) {
+    if (f.category !== "all" && a.category !== f.category) return false;
+    if (!q) return true;
+    return [a.title, a.content, a.imageName]
+      .some(function (v) { return v && String(v).toLowerCase().indexOf(q) !== -1; });
+  });
+};
+
+/** 아카이브 리스트 (카드 그리드) */
+WM.renderArchiveList = function (state, archives) {
+  var visible = WM.filterArchives(archives, state.archiveFilter);
+  if (state.archiveSort === "oldest") {
+    visible = visible.slice().sort(function (a, b) { return a.createdAt < b.createdAt ? -1 : 1; });
+  }
+  var line = document.getElementById("archive-count-line");
+  if (line) line.textContent = "전체 " + archives.length + "건 · 표시 " + visible.length + "건";
+
+  if (!archives.length) return WM.emptyState("등록된 아카이브가 없습니다.", "'새 아카이브 추가' 버튼으로 메모와 이미지를 보관해보세요.");
+  if (!visible.length) return WM.emptyState("검색/필터 조건에 맞는 아카이브가 없습니다.", "검색어나 필터를 변경해보세요.");
+
+  return '<div class="task-grid tasks-grid-3">' + visible.map(function (a) {
+    var excerpt = (a.content || "").trim();
+    if (excerpt.length > 120) excerpt = excerpt.slice(0, 120) + "…";
+    return '<div class="card task-card" data-action="archive-open" data-id="' + a.id + '">' +
+      '<div class="tc-top"><div class="tc-badges">' + WM.badgeArcCat(a.category) +
+        (a.imagePath ? '<span class="badge b-plain-gray" style="display:inline-flex;gap:4px;align-items:center">' + WM.icon("image", 12) + "이미지</span>" : "") +
+      "</div>" +
+      '<button type="button" class="tc-del" data-action="archive-delete" data-id="' + a.id + '" aria-label="아카이브 삭제">' + WM.icon("trash", 15) + "</button>" +
+      "</div>" +
+      '<h3 class="tc-title">' + WM.esc(a.title) + "</h3>" +
+      (excerpt ? '<p class="arc-excerpt">' + WM.esc(excerpt) + "</p>" : '<p class="arc-excerpt none">내용 없음</p>') +
+      '<div class="tc-meta"><span>' + WM.icon("clock", 13) + WM.formatKorean(a.createdAt) + "</span>" +
+        (a.imageName ? "<span>" + WM.icon("image", 13) + WM.esc(a.imageName) + "</span>" : "") +
+      "</div>" +
+    "</div>";
+  }).join("") + "</div>";
+};
+
+/** 아카이브 상세 팝업 (모달) — 이미지 표시 + 다운로드 */
+WM.renderArchiveDetail = function (a) {
+  var img = a.imagePath
+    ? '<div class="ct-img-box" id="archive-detail-img">' + WM.renderLoading("이미지를 불러오는 중...") + "</div>"
+    : "";
+  var fileRow = a.imagePath
+    ? '<div class="arc-file-row"><span class="arc-file-name">' + WM.icon("image", 14) + WM.esc(a.imageName || "이미지 파일") +
+        (a.imageSize ? ' <span class="arc-file-size">(' + WM.formatBytes(a.imageSize) + ")</span>" : "") + "</span>" +
+      '<button type="button" class="btn btn-outline btn-sm" data-action="archive-download" data-id="' + a.id + '">' + WM.icon("download", 14) + "다운로드</button></div>"
+    : "";
+
+  return '<div class="modal-dim" data-archive-detail-dim>' +
+    '<div class="modal">' +
+      '<div class="modal-head"><h2>' + WM.esc(a.title) + "</h2>" +
+        '<button type="button" class="icon-btn" data-action="archive-detail-close" aria-label="닫기">' + WM.icon("x", 18) + "</button></div>" +
+      '<div class="modal-body">' +
+        '<div class="tc-badges">' + WM.badgeArcCat(a.category) + "</div>" +
+        img + fileRow +
+        (a.content ? '<div class="ct-memo-box" style="margin-top:0"><p class="field-label" style="margin-bottom:4px">내용</p><p>' + WM.esc(a.content).replace(/\n/g, "<br>") + "</p></div>" : "") +
+        '<dl class="info-rows">' +
+          '<div class="row"><dt>등록일</dt><dd>' + WM.formatKorean(a.createdAt) + "</dd></div>" +
+          '<div class="row"><dt>마지막 수정</dt><dd>' + WM.formatKorean(a.updatedAt) + "</dd></div>" +
+        "</dl>" +
+      "</div>" +
+      '<div class="modal-foot">' +
+        '<button type="button" class="btn btn-danger-outline" data-action="archive-delete" data-id="' + a.id + '" data-from-detail="1">' + WM.icon("trash", 14) + "삭제</button>" +
+        '<span style="flex:1"></span>' +
+        '<button type="button" class="btn btn-outline" data-action="archive-detail-close">닫기</button>' +
+        '<button type="button" class="btn btn-archive" data-action="archive-edit" data-id="' + a.id + '">' + WM.icon("pencil", 14) + "수정</button>" +
+      "</div>" +
+    "</div>" +
+  "</div>";
+};
+
+/** 아카이브 등록/수정 폼 모달 — 제목·카테고리 필수 */
+WM.renderArchiveForm = function (formState, isEdit) {
+  var v = formState.values;
+  var cats = (WM.App && Array.isArray(WM.App.archiveCats) && WM.App.archiveCats.length)
+    ? WM.App.archiveCats.slice() : WM.ARCHIVE_DEFAULT_CATEGORIES.slice();
+  if (v.category && cats.indexOf(v.category) === -1) cats.push(v.category); // 삭제된 카테고리로 저장된 기존 글 수정 대비
+  var catOpts = cats.map(function (c) {
+    return '<option value="' + WM.esc(c) + '"' + (v.category === c ? " selected" : "") + '>' + WM.esc(c) + "</option>";
+  }).join("");
+
+  var imgPreview;
+  if (formState.previewUrl) {
+    imgPreview = '<img class="ct-img-preview" src="' + WM.esc(formState.previewUrl) + '" alt="이미지 미리보기" />';
+  } else if (v.imagePath) {
+    imgPreview = '<div class="ct-img-box" id="archive-form-img">' + WM.renderLoading("기존 이미지 불러오는 중...") + "</div>";
+  } else {
+    imgPreview = '<p class="set-note" style="margin:0">' + WM.icon("image", 14) + " 등록된 이미지가 없습니다.</p>";
+  }
+
+  return '<div class="modal-dim" data-form-dim>' +
+    '<div class="modal">' +
+      '<div class="modal-head"><h2>' + (isEdit ? "아카이브 수정" : "새 아카이브 추가") + "</h2>" +
+        '<button type="button" class="icon-btn" data-action="archive-form-close" aria-label="닫기">' + WM.icon("x", 18) + "</button></div>" +
+      '<div class="modal-body">' +
+        '<div class="form-grid-3" style="grid-template-columns:2fr 1fr">' +
+          '<div><label class="field-label">제목 <span style="color:var(--red-500)">*</span></label>' +
+            '<input class="input" id="a-title" value="' + WM.esc(v.title || "") + '" placeholder="예: 계약 관련 참고 메모" />' +
+            '<p class="field-error" id="a-title-error" style="display:none">제목을 입력해주세요.</p></div>' +
+          '<div><label class="field-label">카테고리 <span style="color:var(--red-500)">*</span></label>' +
+            '<select class="select" id="a-category">' + catOpts + "</select></div>" +
+        "</div>" +
+        '<div><label class="field-label">내용</label>' +
+          '<textarea class="textarea" id="a-content" rows="6" placeholder="메모하듯 자유롭게 내용을 입력하세요.">' + WM.esc(v.content || "") + "</textarea></div>" +
+        "<div><label class='field-label'>이미지</label>" +
+          '<div class="ct-upload-row">' +
+            imgPreview +
+            '<div class="ct-upload-btns">' +
+              '<button type="button" class="btn btn-outline btn-sm" data-action="archive-image-pick">' + WM.icon("upload", 14) + (v.imagePath || formState.previewUrl ? "이미지 변경" : "이미지 업로드") + "</button>" +
+              ((v.imagePath || formState.previewUrl) ? '<button type="button" class="btn btn-danger-outline btn-sm" data-action="archive-image-remove">' + WM.icon("trash", 13) + "이미지 제거</button>" : "") +
+            "</div>" +
+          "</div>" +
+          '<input type="file" id="archive-image-file" accept="image/jpeg,image/png,image/gif" style="display:none" />' +
+          '<p class="set-note">JPG·PNG·GIF 이미지, 최대 10MB. 새 이미지 업로드 시 기존 이미지는 교체됩니다.</p>' +
+        "</div>" +
+      "</div>" +
+      '<div class="modal-foot">' +
+        '<button type="button" class="btn btn-outline" data-action="archive-form-close">취소</button>' +
+        '<button type="button" class="btn btn-archive" data-action="archive-form-submit">' + (isEdit ? "수정 저장" : "아카이브 등록") + "</button>" +
       "</div>" +
     "</div>" +
   "</div>";

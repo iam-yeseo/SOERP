@@ -25,8 +25,7 @@
           <span class="user-email" id="sidebar-user-email"></span>
           <button type="button" class="logout-btn" id="logout-btn" title="로그아웃" aria-label="로그아웃" data-icon="logout"></button>
         </div>
-        데이터는 Supabase에 계정별로 저장됩니다.<br />
-        백업은 Settings의 JSON 내보내기를 이용하세요.
+        v0.4.0
       </div>
     </aside>
     <div class="drawer-dim" id="drawer-dim" data-action="menu-close"></div>
@@ -43,6 +42,9 @@
           <span class="header-date desktop-only" id="header-date"></span>
           <button class="btn btn-primary" data-action="open-new">
             <span data-icon="plus"></span><span class="hide-sm">새 업무 추가</span>
+          </button>
+          <button class="btn btn-archive" data-action="archive-open-new">
+            <span data-icon="plus"></span><span class="hide-sm">새 아카이브 추가</span>
           </button>
         </div>
       </header>
@@ -65,6 +67,7 @@
   <script src="js/taskApi.js"></script>
   <script src="js/b2gApi.js"></script>
   <script src="js/contactApi.js"></script>
+  <script src="js/archiveApi.js"></script>
   <script src="js/narajangteo.js"></script>
   <script src="js/views.js"></script>
   <script src="js/app.js"></script>

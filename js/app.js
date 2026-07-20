@@ -15,7 +15,13 @@
     contacts: [],        // 연락처 목록 (Supabase contacts)
     contactFilter: { q: "", client: "all" },
     contactForm: null,   // 연락처 폼 상태 { values, editId, snapshot, newFile, previewUrl, imageRemoved }
-    contactDetail: null  // 상세 팝업으로 열려 있는 연락처 id
+    contactDetail: null, // 상세 팝업으로 열려 있는 연락처 id
+    archives: [],        // 아카이브 목록 (Supabase archives)
+    archiveCats: WM.ARCHIVE_DEFAULT_CATEGORIES.slice(), // 아카이브 카테고리 (서버 동기화)
+    archiveFilter: { q: "", category: "all" },
+    archiveSort: "newest",
+    archiveForm: null,   // 아카이브 폼 상태 { values, editId, snapshot, newFile, previewUrl, imageRemoved }
+    archiveDetail: null  // 상세 팝업으로 열려 있는 아카이브 id
   };
   WM.App = App;
 
@@ -93,6 +99,10 @@
       view.innerHTML = WM.renderContactsShell(App, App.contacts.length);
       refreshContactList();
       bindContactFilters();
+    } else if (r.page === "archives") {
+      view.innerHTML = WM.renderArchivesShell(App, App.archives.length);
+      refreshArchiveList();
+      bindArchiveFilters();
     } else if (r.page === "settings") {
       view.innerHTML = WM.renderSettings(App.tasks);
       bindSettings();
@@ -127,13 +137,14 @@
 
   /* ---- 사이드바 내비 ---- */
   var NAV = [
-    { href: "#/dashboard", page: "dashboard", label: "Dashboard", icon: "dashboard" },
-    { href: "#/tasks", page: "tasks", label: "Tasks", icon: "list" },
-    { href: "#/calendar", page: "calendar", label: "Calendar", icon: "calendar" },
-    { href: "#/templates", page: "templates", label: "Templates", icon: "filestack" },
-    { href: "#/b2g", page: "b2g", label: "B2G", icon: "gavel" },
-    { href: "#/contacts", page: "contacts", label: "Contact", icon: "contact" },
-    { href: "#/settings", page: "settings", label: "Settings", icon: "settings" }
+    { href: "#/dashboard", page: "dashboard", label: "대시보드", icon: "dashboard" },
+    { href: "#/tasks", page: "tasks", label: "업무 현황", icon: "list" },
+    { href: "#/calendar", page: "calendar", label: "달력", icon: "calendar" },
+    { href: "#/templates", page: "templates", label: "업무 템플릿", icon: "filestack" },
+    { href: "#/b2g", page: "b2g", label: "나라장터", icon: "gavel" },
+    { href: "#/contacts", page: "contacts", label: "연락처", icon: "contact" },
+    { href: "#/archives", page: "archives", label: "아카이브", icon: "archive" },
+    { href: "#/settings", page: "settings", label: "설정", icon: "settings" }
   ];
 
   function renderNav(current) {
@@ -834,6 +845,265 @@
     });
   }
 
+  /* ---- 아카이브 (Archives) ---- */
+  function getArchive(id) {
+    return App.archives.find(function (a) { return a.id === id; });
+  }
+
+  function refreshArchiveList() {
+    var el = document.getElementById("archive-list");
+    if (el) el.innerHTML = WM.renderArchiveList(App, App.archives);
+  }
+
+  function bindArchiveFilters() {
+    var q = document.getElementById("archive-q");
+    if (q) q.addEventListener("input", function () { App.archiveFilter.q = q.value; refreshArchiveList(); });
+    var cat = document.getElementById("archive-category");
+    if (cat) cat.addEventListener("change", function () { App.archiveFilter.category = cat.value; refreshArchiveList(); });
+    var sort = document.getElementById("archive-sort");
+    if (sort) sort.addEventListener("change", function () { App.archiveSort = sort.value; refreshArchiveList(); });
+  }
+
+  /** Storage 이미지를 서명 URL로 불러와 컨테이너에 표시 */
+  function loadArchiveImage(containerId, path) {
+    if (!path) return;
+    WM.archiveApi.getFileUrl(path).then(function (url) {
+      var box = document.getElementById(containerId);
+      if (box) box.innerHTML = '<img class="ct-img" src="' + url + '" alt="아카이브 이미지" />';
+    }).catch(function (e) {
+      console.error("아카이브 이미지 로딩 실패", e);
+      var box = document.getElementById(containerId);
+      if (box) box.innerHTML = '<p class="set-note" style="margin:0">이미지를 불러오지 못했습니다.</p>';
+    });
+  }
+
+  /* -- 상세 팝업 -- */
+  function openArchiveDetail(id) {
+    var a = getArchive(id);
+    if (!a) return;
+    App.archiveDetail = id;
+    document.getElementById("modal-root").innerHTML = WM.renderArchiveDetail(a);
+    loadArchiveImage("archive-detail-img", a.imagePath);
+  }
+
+  function closeArchiveDetail() {
+    App.archiveDetail = null;
+    document.getElementById("modal-root").innerHTML = "";
+  }
+
+  /* -- 등록/수정 폼 -- */
+  function emptyArchive() {
+    return { title: "", category: App.archiveCats[0] || "일반", content: "", imagePath: "", imageName: "", imageSize: null };
+  }
+
+  function openArchiveForm(editId) {
+    var values;
+    if (editId) {
+      var a = getArchive(editId);
+      if (!a) return;
+      values = JSON.parse(JSON.stringify(a));
+    } else {
+      values = emptyArchive();
+    }
+    App.archiveDetail = null;
+    App.archiveForm = { values: values, editId: editId || null, snapshot: JSON.stringify(values),
+      newFile: null, previewUrl: null, imageRemoved: false };
+    paintArchiveForm();
+  }
+
+  function paintArchiveForm(repaint) {
+    document.getElementById("modal-root").innerHTML =
+      WM.renderArchiveForm(App.archiveForm, !!App.archiveForm.editId);
+    if (repaint) {
+      var dimEl = document.querySelector("#modal-root .modal-dim");
+      if (dimEl) {
+        dimEl.style.animation = "none";
+        var modalEl = dimEl.querySelector(".modal");
+        if (modalEl) modalEl.style.animation = "none";
+      }
+    }
+    bindArchiveFormFields();
+    if (!App.archiveForm.previewUrl && App.archiveForm.values.imagePath) {
+      loadArchiveImage("archive-form-img", App.archiveForm.values.imagePath);
+    }
+  }
+
+  function closeArchiveForm() {
+    if (App.archiveForm && App.archiveForm.previewUrl) URL.revokeObjectURL(App.archiveForm.previewUrl);
+    App.archiveForm = null;
+    document.getElementById("modal-root").innerHTML = "";
+  }
+
+  function archiveFormDirty() {
+    var f = App.archiveForm;
+    if (!f) return false;
+    return JSON.stringify(f.values) !== f.snapshot || !!f.newFile || f.imageRemoved;
+  }
+
+  function requestCloseArchiveForm() {
+    if (!App.archiveForm) return;
+    if (archiveFormDirty()) {
+      WM.confirmDialog({
+        title: "정말 닫으시겠어요?",
+        description: "입력된 내용이 있습니다. 지금 닫으면 작성 중인 내용이 저장되지 않습니다.",
+        confirmLabel: "닫기", cancelLabel: "계속 작성", danger: true
+      }, closeArchiveForm);
+    } else {
+      closeArchiveForm();
+    }
+  }
+
+  function bindArchiveFormFields() {
+    var v = App.archiveForm.values;
+    var ti = document.getElementById("a-title");
+    if (ti) ti.addEventListener("input", function () { v.title = ti.value; });
+    var ct = document.getElementById("a-content");
+    if (ct) ct.addEventListener("input", function () { v.content = ct.value; });
+    var cat = document.getElementById("a-category");
+    if (cat) cat.addEventListener("change", function () { v.category = cat.value; });
+
+    var file = document.getElementById("archive-image-file");
+    if (file) file.addEventListener("change", function () {
+      var f = file.files && file.files[0];
+      file.value = "";
+      if (!f) return;
+      var err = WM.archiveApi.validateFile(f);
+      if (err) { WM.toast(err, "error"); return; }
+      if (App.archiveForm.previewUrl) URL.revokeObjectURL(App.archiveForm.previewUrl);
+      App.archiveForm.newFile = f;
+      App.archiveForm.previewUrl = URL.createObjectURL(f);
+      App.archiveForm.imageRemoved = false;
+      paintArchiveForm(true);
+    });
+  }
+
+  async function submitArchiveForm() {
+    var f = App.archiveForm;
+    var v = f.values;
+    // 제목·카테고리 필수
+    if (!v.title || !v.title.trim()) {
+      var err = document.getElementById("a-title-error");
+      if (err) err.style.display = "block";
+      var ti = document.getElementById("a-title");
+      if (ti) { ti.focus(); ti.classList.add("shake"); setTimeout(function () { ti.classList.remove("shake"); }, 350); }
+      return;
+    }
+    if (!v.category) {
+      WM.toast("카테고리를 선택해주세요.", "error");
+      return;
+    }
+    var clean = Object.assign({}, v, { title: v.title.trim(), content: (v.content || "").trim() });
+
+    var isEdit = !!f.editId;
+    var submitBtn = document.querySelector("[data-action='archive-form-submit']");
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "저장 중..."; }
+    function restoreBtn() {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isEdit ? "수정 저장" : "아카이브 등록"; }
+    }
+
+    var prevImagePath = isEdit ? (getArchive(f.editId) || {}).imagePath : "";
+
+    try {
+      // 1) 새 이미지가 있으면 먼저 업로드
+      if (f.newFile) {
+        clean.imagePath = await WM.archiveApi.uploadFile(f.newFile);
+        clean.imageName = f.newFile.name;
+        clean.imageSize = f.newFile.size;
+      } else if (f.imageRemoved) {
+        clean.imagePath = "";
+        clean.imageName = "";
+        clean.imageSize = null;
+      }
+
+      // 2) DB 저장
+      var saved;
+      if (isEdit) {
+        delete clean.id; delete clean.createdAt; delete clean.updatedAt;
+        saved = await WM.archiveApi.updateArchive(f.editId, clean);
+        App.archives = App.archives.map(function (a) { return a.id === saved.id ? saved : a; });
+        WM.toast("아카이브가 수정되었습니다.");
+      } else {
+        saved = await WM.archiveApi.createArchive(clean);
+        App.archives.unshift(saved);
+        WM.toast("아카이브가 등록되었습니다.");
+      }
+
+      // 3) 교체/제거된 기존 이미지 정리 (실패해도 무시)
+      if (prevImagePath && prevImagePath !== saved.imagePath) {
+        WM.archiveApi.deleteFile(prevImagePath);
+      }
+    } catch (e) {
+      console.error("아카이브 저장 실패", e);
+      WM.toast("저장에 실패했습니다. 네트워크를 확인해주세요.", "error");
+      restoreBtn();
+      return;
+    }
+    closeArchiveForm();
+    rerenderCurrent();
+  }
+
+  function deleteArchiveWithConfirm(id, fromDetail) {
+    var a = getArchive(id);
+    if (!a) return;
+    WM.confirmDialog({
+      title: "아카이브를 삭제할까요?",
+      description: '"' + a.title + '"\n삭제한 아카이브는 복구할 수 없습니다. 첨부 이미지도 함께 삭제됩니다.',
+      confirmLabel: "삭제", danger: true
+    }, function () {
+      WM.archiveApi.deleteArchive(id).then(function () {
+        if (a.imagePath) WM.archiveApi.deleteFile(a.imagePath);
+        App.archives = App.archives.filter(function (x) { return x.id !== id; });
+        WM.toast("아카이브가 삭제되었습니다.");
+        if (fromDetail) closeArchiveDetail();
+        rerenderKeepScroll();
+      }).catch(function (err) {
+        console.error("아카이브 삭제 실패", err);
+        WM.toast("삭제에 실패했습니다. 네트워크를 확인해주세요.", "error");
+      });
+    });
+  }
+
+  /* -- 카테고리 설정 (설정 페이지) -- */
+  function saveArchiveCats(next, okMsg) {
+    var prev = App.archiveCats;
+    App.archiveCats = next;
+    WM.archiveApi.saveCategories(next).then(function () {
+      WM.toast(okMsg);
+      rerenderKeepScroll();
+    }).catch(function (e) {
+      console.error("카테고리 저장 실패", e);
+      App.archiveCats = prev;
+      WM.toast("카테고리 저장에 실패했습니다. 네트워크를 확인해주세요.", "error");
+      rerenderKeepScroll();
+    });
+  }
+
+  function addArchiveCategory() {
+    var input = document.getElementById("arc-cat-input");
+    var name = input ? input.value.trim() : "";
+    if (!name) { if (input) input.focus(); return; }
+    if (App.archiveCats.indexOf(name) !== -1) {
+      WM.toast("이미 있는 카테고리입니다.", "error");
+      return;
+    }
+    saveArchiveCats(App.archiveCats.concat([name]), '"' + name + '" 카테고리를 추가했습니다.');
+  }
+
+  function removeArchiveCategory(name) {
+    if (App.archiveCats.length <= 1) {
+      WM.toast("카테고리는 최소 1개 이상 있어야 합니다.", "error");
+      return;
+    }
+    WM.confirmDialog({
+      title: "카테고리를 삭제할까요?",
+      description: '"' + name + '"\n이 카테고리로 분류된 기존 아카이브의 분류는 그대로 유지됩니다.',
+      confirmLabel: "삭제", danger: true
+    }, function () {
+      saveArchiveCats(App.archiveCats.filter(function (c) { return c !== name; }),
+        '"' + name + '" 카테고리를 삭제했습니다.');
+    });
+  }
+
   /* ---- 전역 이벤트 위임 ---- */
   document.addEventListener("click", function (e) {
     // 체크리스트 버튼
@@ -1181,6 +1451,55 @@
         App.contactForm.values.imagePath = "";
       }
       paintContactForm(true);
+    } else if (act === "archive-open-new") {
+      if (route().page !== "archives") location.hash = "#/archives";
+      openArchiveForm(null);
+    } else if (act === "archive-open") {
+      if (e.target.closest("select, button, a, input, [data-stop]")) return;
+      openArchiveDetail(id);
+    } else if (act === "archive-detail-close") {
+      closeArchiveDetail();
+    } else if (act === "archive-edit") {
+      openArchiveForm(id);
+    } else if (act === "archive-delete") {
+      e.stopPropagation();
+      deleteArchiveWithConfirm(id, !!el.dataset.fromDetail);
+    } else if (act === "archive-form-close") {
+      requestCloseArchiveForm();
+    } else if (act === "archive-form-submit") {
+      submitArchiveForm();
+    } else if (act === "archive-image-pick") {
+      var aif = document.getElementById("archive-image-file");
+      if (aif) aif.click();
+    } else if (act === "archive-image-remove") {
+      if (App.archiveForm.previewUrl) {
+        URL.revokeObjectURL(App.archiveForm.previewUrl);
+        App.archiveForm.previewUrl = null;
+        App.archiveForm.newFile = null;
+      }
+      if (App.archiveForm.values.imagePath) {
+        App.archiveForm.imageRemoved = true;
+        App.archiveForm.values.imagePath = "";
+        App.archiveForm.values.imageName = "";
+        App.archiveForm.values.imageSize = null;
+      }
+      paintArchiveForm(true);
+    } else if (act === "archive-download") {
+      var arcDl = getArchive(id);
+      if (!arcDl || !arcDl.imagePath) return;
+      el.disabled = true;
+      WM.archiveApi.downloadFile(arcDl.imagePath, arcDl.imageName).then(function () {
+        el.disabled = false;
+        WM.toast("이미지를 다운로드했습니다.");
+      }).catch(function (err) {
+        el.disabled = false;
+        console.error("아카이브 다운로드 실패", err);
+        WM.toast("다운로드에 실패했습니다. 네트워크를 확인해주세요.", "error");
+      });
+    } else if (act === "arc-cat-add") {
+      addArchiveCategory();
+    } else if (act === "arc-cat-remove") {
+      removeArchiveCategory(el.dataset.name);
     } else if (act === "menu-open") {
       document.getElementById("sidebar").classList.add("open");
       document.getElementById("drawer-dim").classList.add("show");
@@ -1225,6 +1544,8 @@
     if (App.bidForm) return false;                           // B2G 공고 등록/수정 모달
     if (App.contactForm) return false;                       // 연락처 등록/수정 모달
     if (App.contactDetail) return false;                     // 연락처 상세 팝업
+    if (App.archiveForm) return false;                       // 아카이브 등록/수정 모달
+    if (App.archiveDetail) return false;                     // 아카이브 상세 팝업
     if (document.getElementById("confirm-root").innerHTML) return false; // 확인 모달
 
     var key = e.key.toLowerCase();
@@ -1299,7 +1620,15 @@
         requestCloseContactForm();
       } else if (App.contactDetail) {
         closeContactDetail();
+      } else if (App.archiveForm) {
+        requestCloseArchiveForm();
+      } else if (App.archiveDetail) {
+        closeArchiveDetail();
       }
+    }
+    if (e.key === "Enter" && e.target.id === "arc-cat-input") {
+      e.preventDefault();
+      addArchiveCategory();
     }
   });
 
@@ -1347,6 +1676,16 @@
       WM.contactApi.getContacts()
         .then(function (contacts) { App.contacts = contacts; if (route().page === "contacts") render(); })
         .catch(function (e) { console.error("연락처 목록을 불러오지 못했습니다.", e); });
+      // 아카이브 카테고리 → 목록 순으로 불러옴
+      WM.archiveApi.getCategories()
+        .then(function (cats) {
+          App.archiveCats = cats;
+          if (route().page === "settings" || route().page === "archives") render();
+        })
+        .catch(function (e) { console.error("아카이브 카테고리를 불러오지 못했습니다.", e); });
+      WM.archiveApi.getArchives()
+        .then(function (archives) { App.archives = archives; if (route().page === "archives") render(); })
+        .catch(function (e) { console.error("아카이브 목록을 불러오지 못했습니다.", e); });
     })
     .catch(function (e) {
       console.error("업무 데이터를 불러오지 못했습니다.", e);

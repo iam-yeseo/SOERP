@@ -79,8 +79,17 @@ WM.checklistProgress = function (list) {
   return Math.round((done / list.length) * 100);
 };
 
+/** 파일 크기 표시 (예: 1.2MB) */
+WM.formatBytes = function (n) {
+  if (n == null || isNaN(n)) return "";
+  if (n < 1024) return n + "B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1).replace(/\.0$/, "") + "KB";
+  return (n / (1024 * 1024)).toFixed(1).replace(/\.0$/, "") + "MB";
+};
+
 /* ---- 라벨/순서 상수 ---- */
 WM.STORAGE_KEY = "work-management-tasks";
+WM.APP_VERSION = "0.4.0";
 
 WM.CATEGORY_LABELS = {
   bid: "입찰", contract: "계약", accounting: "회계/청구", guarantee: "보증서",

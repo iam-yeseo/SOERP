@@ -8,6 +8,7 @@
   --gray-900:#111827;
   --red-50:#fef2f2; --red-200:#fecaca; --red-500:#ef4444; --red-600:#dc2626; --red-700:#b91c1c;
   --amber-50:#fffbeb; --amber-600:#d97706; --amber-700:#b45309;
+  --teal-50:#f0fdfa; --teal-600:#0d9488; --teal-700:#0f766e;
   --shadow-card:0 1px 2px rgba(16,24,40,.05);
   --shadow-hover:0 4px 12px rgba(16,24,40,.10);
   --radius:12px;
@@ -87,6 +88,8 @@ svg { display:block; }
 .btn-danger-outline:hover { background:var(--red-50); }
 .btn-danger { background:var(--red-600); color:#fff; font-weight:600; }
 .btn-danger:hover { background:var(--red-700); }
+.btn-archive { background:var(--teal-600); color:#fff; font-weight:600; box-shadow:var(--shadow-card); }
+.btn-archive:hover { background:var(--teal-700); }
 .btn-sm { height:30px; padding:0 10px; font-size:12px; }
 .icon-btn { display:flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:10px; color:var(--gray-500); }
 .icon-btn:hover { background:var(--gray-50); }
@@ -589,6 +592,21 @@ svg { display:block; }
   .tasks-grid-3 { grid-template-columns:1fr 1fr 1fr; }
   .tpl-grid { grid-template-columns:1fr 1fr 1fr; }
 }
+
+/* ===== 아카이브 (Archives) ===== */
+.arc-excerpt { margin-top:8px; font-size:13px; color:var(--gray-500); line-height:1.55; white-space:pre-line;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.arc-excerpt.none { color:var(--gray-300); font-size:12px; }
+.arc-file-row { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+  background:var(--gray-50); border:1px solid var(--gray-100); border-radius:10px; padding:8px 12px; }
+.arc-file-name { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--gray-600);
+  overflow:hidden; text-overflow:ellipsis; }
+.arc-file-size { color:var(--gray-400); font-size:12px; }
+.arc-cat-list { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.arc-cat-chip { display:inline-flex; align-items:center; gap:2px; }
+.arc-cat-del { display:flex; align-items:center; justify-content:center; width:20px; height:20px;
+  border-radius:99px; color:var(--gray-300); transition:color .12s, background .12s; }
+.arc-cat-del:hover { color:var(--red-500); background:var(--red-50); }
 
 /* ===== 연락처 (Contact) ===== */
 .contact-table td.center { text-align:center; }
