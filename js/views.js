@@ -477,6 +477,46 @@ WM.renderTemplates = function (edit) {
     '<div class="tpl-grid">' + cards + newCard + "</div>";
 };
 
+/** 설정 > 필터 기본값 섹션 (업무 현황 + 아카이브) */
+function renderFilterPrefsSection(archiveCats) {
+  var p = WM.filterPrefs || WM.loadFilterPrefs();
+  function opt(v, label, cur) { return '<option value="' + WM.esc(v) + '"' + (v === cur ? " selected" : "") + ">" + WM.esc(label) + "</option>"; }
+  function field(label, id, opts) {
+    return '<div><label class="field-label">' + label + '</label><select class="select" id="' + id + '">' + opts + "</select></div>";
+  }
+
+  var t = p.task, a = p.archive;
+  var doneOpts = opt("all", "전체 보기", t.doneView) + opt("active", "미완료만", t.doneView) + opt("done", "완료만", t.doneView);
+  var statusOpts = opt("all", "전체", t.status) + WM.STATUS_ORDER.map(function (s) { return opt(s, WM.STATUS_LABELS[s], t.status); }).join("");
+  var catOpts = opt("all", "전체", t.category) + WM.CATEGORY_ORDER.map(function (c) { return opt(c, WM.CATEGORY_LABELS[c], t.category); }).join("");
+  var priOpts = opt("all", "전체", t.priority) + WM.PRIORITY_ORDER.map(function (x) { return opt(x, WM.PRIORITY_LABELS[x], t.priority); }).join("");
+  var sortOpts = opt("createdAt", "생성일순", t.sort) + opt("dueDate", "마감일순", t.sort) + opt("priority", "우선순위순", t.sort);
+
+  var arcCats = (archiveCats || []).slice();
+  if (a.category !== "all" && arcCats.indexOf(a.category) === -1) arcCats.push(a.category);
+  var arcCatOpts = opt("all", "전체", a.category) + arcCats.map(function (c) { return opt(c, c, a.category); }).join("");
+  var arcSortOpts = opt("newest", "최신순", a.sort) + opt("oldest", "오래된순", a.sort);
+
+  return '<div class="card section-card"><h2 class="sec-h">필터 기본값</h2>' +
+    '<p class="set-note" style="margin:0 0 12px">업무 현황·아카이브 페이지를 열 때 적용되는 필터·정렬 기본값입니다. 변경하면 즉시 저장되고 현재 화면에도 적용됩니다.</p>' +
+    '<p class="field-label" style="font-weight:600;color:var(--gray-600)">업무 현황</p>' +
+    '<div class="form-grid-3" style="margin-bottom:12px">' +
+      field("완료 여부", "pref-task-done", doneOpts) +
+      field("상태", "pref-task-status", statusOpts) +
+      field("카테고리", "pref-task-category", catOpts) +
+    "</div>" +
+    '<div class="form-grid-3">' +
+      field("우선순위", "pref-task-priority", priOpts) +
+      field("정렬", "pref-task-sort", sortOpts) +
+    "</div>" +
+    '<p class="field-label" style="font-weight:600;color:var(--gray-600);margin-top:16px">아카이브</p>' +
+    '<div class="form-grid-3">' +
+      field("카테고리", "pref-arc-category", arcCatOpts) +
+      field("정렬", "pref-arc-sort", arcSortOpts) +
+    "</div>" +
+  "</div>";
+}
+
 /* ---- 설정 페이지 ---- */
 WM.renderSettings = function (tasks) {
   var lastUpdated = tasks.reduce(function (max, t) { return t.updatedAt > max ? t.updatedAt : max; }, "");
@@ -502,6 +542,7 @@ WM.renderSettings = function (tasks) {
       "</div>" +
       '<p class="set-note">아카이브 업로드·검색 필터에 사용되는 분류입니다. 최소 1개 이상의 카테고리가 있어야 하며, 삭제해도 기존 아카이브의 분류는 유지됩니다.</p>' +
     "</div>" +
+    renderFilterPrefsSection(cats) +
     '<div class="card section-card"><h2 class="sec-h">데이터 백업 / 복원</h2>' +
       '<div class="set-row">' +
         '<button type="button" class="btn btn-outline" data-action="export">' + WM.icon("download", 15) + "JSON 내보내기</button>" +
@@ -718,6 +759,7 @@ WM.renderArchivesShell = function (state, total) {
   (state.archives || []).forEach(function (a) {
     if (a.category && cats.indexOf(a.category) === -1) cats.push(a.category);
   });
+  if (f.category !== "all" && cats.indexOf(f.category) === -1) cats.push(f.category);
   var catOpts = '<option value="all">카테고리: 전체</option>' + cats.map(function (c) {
     return '<option value="' + WM.esc(c) + '"' + (f.category === c ? " selected" : "") + '>' + WM.esc(c) + "</option>";
   }).join("");

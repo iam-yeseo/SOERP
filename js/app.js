@@ -1,10 +1,13 @@
 /* ===== 앱: 상태 + 해시 라우터 + 이벤트 ===== */
 (function () {
+  var PREFS = WM.loadFilterPrefs(); // 사용자 지정 필터 기본값 (설정에서 변경 가능)
+  WM.filterPrefs = PREFS;
+
   var App = {
     tasks: [],
     ready: false,        // Supabase에서 첫 데이터를 불러왔는지
-    filter: Object.assign({}, WM.DEFAULT_FILTER),
-    sort: "dueDate",
+    filter: WM.getDefaultTaskFilter(),
+    sort: PREFS.task.sort,
     view: "card",
     form: null,          // { values, editId, snapshot } 또는 null
     clEditing: null,     // 체크리스트 인라인 수정 중인 항목 id
@@ -18,8 +21,8 @@
     contactDetail: null, // 상세 팝업으로 열려 있는 연락처 id
     archives: [],        // 아카이브 목록 (Supabase archives)
     archiveCats: WM.ARCHIVE_DEFAULT_CATEGORIES.slice(), // 아카이브 카테고리 (서버 동기화)
-    archiveFilter: { q: "", category: "all" },
-    archiveSort: "newest",
+    archiveFilter: { q: "", category: PREFS.archive.category },
+    archiveSort: PREFS.archive.sort,
     archiveForm: null,   // 아카이브 폼 상태 { values, editId, snapshot, newFile, previewUrl, imageRemoved }
     archiveDetail: null  // 상세 팝업으로 열려 있는 아카이브 id
   };
@@ -491,6 +494,33 @@
 
   /* ---- 설정 페이지 바인딩 ---- */
   function bindSettings() {
+    // 필터 기본값: 변경 즉시 저장 + 현재 필터 상태에도 반영
+    [
+      ["pref-task-done", "task", "doneView"],
+      ["pref-task-status", "task", "status"],
+      ["pref-task-category", "task", "category"],
+      ["pref-task-priority", "task", "priority"],
+      ["pref-task-sort", "task", "sort"],
+      ["pref-arc-category", "archive", "category"],
+      ["pref-arc-sort", "archive", "sort"]
+    ].forEach(function (row) {
+      var el = document.getElementById(row[0]);
+      if (!el) return;
+      el.addEventListener("change", function () {
+        WM.filterPrefs[row[1]][row[2]] = el.value;
+        WM.saveFilterPrefs(WM.filterPrefs);
+        // 현재 세션의 필터 상태에도 즉시 적용
+        if (row[1] === "task") {
+          if (row[2] === "sort") App.sort = el.value;
+          else App.filter[row[2]] = el.value;
+        } else {
+          if (row[2] === "sort") App.archiveSort = el.value;
+          else App.archiveFilter.category = el.value;
+        }
+        WM.toast("필터 기본값이 저장되었습니다.");
+      });
+    });
+
     var fileInput = document.getElementById("import-file");
     if (fileInput) fileInput.addEventListener("change", function () {
       var file = fileInput.files && fileInput.files[0];
@@ -1635,7 +1665,7 @@
   /* 헤더 검색: Enter → /tasks 검색 */
   document.getElementById("header-search").addEventListener("keydown", function (e) {
     if (e.key !== "Enter") return;
-    App.filter = Object.assign({}, WM.DEFAULT_FILTER, { q: e.target.value.trim() });
+    App.filter = Object.assign(WM.getDefaultTaskFilter(), { q: e.target.value.trim() });
     if (route().page === "tasks") render();
     else location.hash = "#/tasks";
   });

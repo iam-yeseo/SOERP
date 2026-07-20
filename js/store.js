@@ -57,6 +57,55 @@ WM.statusChangePatch = function (status) {
 /* ---- 필터/정렬 ---- */
 WM.DEFAULT_FILTER = { q: "", status: "all", category: "all", priority: "all", doneView: "all" };
 
+/* ---- 필터 기본값 (사용자 설정, 이 브라우저 localStorage에 저장) ---- */
+WM.FILTER_PREFS_KEY = "work-management-filter-prefs";
+
+WM.DEFAULT_FILTER_PREFS = {
+  task: { doneView: "all", status: "all", category: "all", priority: "all", sort: "createdAt" },
+  archive: { category: "all", sort: "newest" }
+};
+
+/** 저장된 필터 기본값 로드 (손상/유효하지 않은 값은 기본값으로 보정) */
+WM.loadFilterPrefs = function () {
+  var d = JSON.parse(JSON.stringify(WM.DEFAULT_FILTER_PREFS));
+  try {
+    var raw = localStorage.getItem(WM.FILTER_PREFS_KEY);
+    if (raw) {
+      var p = JSON.parse(raw);
+      if (p && typeof p === "object") {
+        if (p.task && typeof p.task === "object") {
+          Object.keys(d.task).forEach(function (k) { if (typeof p.task[k] === "string") d.task[k] = p.task[k]; });
+        }
+        if (p.archive && typeof p.archive === "object") {
+          Object.keys(d.archive).forEach(function (k) { if (typeof p.archive[k] === "string") d.archive[k] = p.archive[k]; });
+        }
+      }
+    }
+  } catch (e) { console.error("필터 기본값을 읽지 못했습니다.", e); }
+  // 유효성 보정
+  if (d.task.status !== "all" && WM.STATUS_ORDER.indexOf(d.task.status) === -1) d.task.status = "all";
+  if (d.task.category !== "all" && WM.CATEGORY_ORDER.indexOf(d.task.category) === -1) d.task.category = "all";
+  if (d.task.priority !== "all" && WM.PRIORITY_ORDER.indexOf(d.task.priority) === -1) d.task.priority = "all";
+  if (["all", "active", "done"].indexOf(d.task.doneView) === -1) d.task.doneView = "all";
+  if (["dueDate", "createdAt", "priority"].indexOf(d.task.sort) === -1) d.task.sort = "createdAt";
+  if (["newest", "oldest"].indexOf(d.archive.sort) === -1) d.archive.sort = "newest";
+  return d;
+};
+
+WM.saveFilterPrefs = function (prefs) {
+  WM.filterPrefs = prefs;
+  try {
+    localStorage.setItem(WM.FILTER_PREFS_KEY, JSON.stringify(prefs));
+  } catch (e) { console.error("필터 기본값 저장에 실패했습니다.", e); }
+};
+
+/** 업무 현황 필터의 초기 상태 (검색어 제외, 사용자 기본값 반영) */
+WM.getDefaultTaskFilter = function () {
+  var p = WM.filterPrefs || WM.loadFilterPrefs();
+  return { q: "", status: p.task.status, category: p.task.category,
+    priority: p.task.priority, doneView: p.task.doneView };
+};
+
 WM.isActive = function (t) { return t.status !== "done" && t.status !== "cancelled"; };
 
 WM.isTaskToday = function (t) {
