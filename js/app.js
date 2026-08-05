@@ -98,6 +98,9 @@
       view.innerHTML = WM.renderTemplates(App.tplEdit);
     } else if (r.page === "b2g") {
       view.innerHTML = WM.renderB2G(App.bids);
+    } else if (r.page === "bidcalc") {
+      view.innerHTML = WM.renderBidCalc();
+      WM.bindBidCalc();
     } else if (r.page === "contacts") {
       view.innerHTML = WM.renderContactsShell(App, App.contacts.length);
       refreshContactList();
@@ -145,6 +148,7 @@
     { href: "#/calendar", page: "calendar", label: "달력", icon: "calendar" },
     { href: "#/templates", page: "templates", label: "업무 템플릿", icon: "filestack" },
     { href: "#/b2g", page: "b2g", label: "나라장터", icon: "gavel" },
+    { href: "#/bidcalc", page: "bidcalc", label: "입찰 금액 도우미", icon: "calculator" },
     { href: "#/contacts", page: "contacts", label: "연락처", icon: "contact" },
     { href: "#/archives", page: "archives", label: "아카이브", icon: "archive" },
     { href: "#/settings", page: "settings", label: "설정", icon: "settings" }
