@@ -48,6 +48,11 @@ window.WM = window.WM || {};
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch (e) { /* 무시 */ }
   }
 
+  /** 저장된 입력값 전체 삭제 (초기화 버튼) */
+  WM.resetBidCalc = function () {
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* 무시 */ }
+  };
+
   /** 천 단위 콤마. zeroDash=true면 0을 "-"로 (엑셀 회계 서식과 동일) */
   function fmt(n, zeroDash) {
     n = Math.round(Number(n) || 0);
@@ -130,8 +135,11 @@ window.WM = window.WM || {};
         "</div>" +
       "</div>";
 
-    return '<div class="page-head"><h1>입찰 금액 도우미</h1>' +
+    return '<div class="page-head page-head-row"><div><h1>입찰 금액 도우미</h1>' +
         "<p>입찰금액·공급가액·대금지급 금액을 입력하면 보증금, 세액, 한글 금액이 자동 계산됩니다.</p></div>" +
+        '<button type="button" class="btn btn-outline" data-action="bidcalc-reset">' +
+          '<span>' + WM.icon("rotate", 16) + "</span><span>초기화</span></button>" +
+      "</div>" +
       '<div class="bidcalc-grid">' +
         '<div class="bidcalc-col">' + bidCard + supplyCard + "</div>" +
         '<div class="bidcalc-col">' + payCard + "</div>" +

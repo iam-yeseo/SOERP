@@ -1530,6 +1530,16 @@
         console.error("아카이브 다운로드 실패", err);
         WM.toast("다운로드에 실패했습니다. 네트워크를 확인해주세요.", "error");
       });
+    } else if (act === "bidcalc-reset") {
+      WM.confirmDialog({
+        title: "입력값을 초기화할까요?",
+        description: "입찰 금액 도우미에 입력된 모든 금액과 퍼센트가 지워집니다.",
+        confirmLabel: "초기화", danger: true
+      }, function () {
+        WM.resetBidCalc();
+        WM.toast("입력값이 초기화되었습니다.");
+        rerenderCurrent();
+      });
     } else if (act === "arc-cat-add") {
       addArchiveCategory();
     } else if (act === "arc-cat-remove") {
