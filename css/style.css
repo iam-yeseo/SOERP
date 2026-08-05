@@ -622,3 +622,30 @@ svg { display:block; }
 .ct-upload-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
 .ct-upload-row .ct-img-box { flex:1; min-width:160px; }
 .ct-upload-btns { display:flex; flex-direction:column; gap:6px; }
+
+/* ===== 입찰 금액 도우미 (Bid Calculator) ===== */
+.bidcalc-grid { display:grid; grid-template-columns:1fr; gap:16px; align-items:start; }
+.bidcalc-col { display:flex; flex-direction:column; gap:16px; }
+.bc-card { padding:20px; }
+.bc-title { font-size:15px; font-weight:700; margin-bottom:16px; }
+.bc-section { margin-top:16px; padding-top:14px; border-top:1px solid var(--gray-100); }
+.bc-section-title { font-size:12px; font-weight:600; color:var(--gray-400); margin-bottom:10px; letter-spacing:.02em; }
+.bc-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:36px; }
+.bc-label { font-size:14px; font-weight:500; color:var(--gray-600); white-space:nowrap; }
+.bc-rate { display:inline-flex; align-items:center; padding:1px 6px; border-radius:6px;
+  background:var(--brand-50); color:var(--brand-700); font-size:11px; font-weight:600; }
+.bc-amount { font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.bc-unit { font-size:12px; font-weight:400; color:var(--gray-400); margin-left:3px; }
+.bc-hangul { margin:2px 0 12px; font-size:12px; color:var(--gray-400); text-align:right; }
+.bc-input-wrap { display:inline-flex; align-items:center; gap:6px; }
+.bc-amt-input { width:180px; text-align:right; font-variant-numeric:tabular-nums; }
+.bc-pct-input { width:72px; text-align:right; font-variant-numeric:tabular-nums; }
+.bc-pct-input::-webkit-outer-spin-button, .bc-pct-input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+.bc-pct-input[type="number"] { -moz-appearance:textfield; appearance:textfield; }
+.bc-pay-right { display:inline-flex; align-items:center; gap:14px; flex-wrap:wrap; justify-content:flex-end; }
+.bc-pct-total-row { margin-top:8px; padding-top:10px; border-top:1px dashed var(--gray-200); }
+.bc-total-ok { color:#059669; }
+.bc-total-bad { color:var(--red-600); }
+@media (min-width:900px) {
+  .bidcalc-grid { grid-template-columns:1fr 1fr; }
+}
