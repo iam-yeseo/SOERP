@@ -320,6 +320,16 @@ svg { display:block; }
 .cal-chip:hover { filter:brightness(.96); }
 .cal-chip.muted { opacity:.55; text-decoration:line-through; }
 .cal-more { margin-top:3px; font-size:11px; color:var(--gray-400); padding-left:6px; }
+.cal-cell { cursor:pointer; }
+
+/* 달력 날짜 상세 모달 */
+.cal-day-count { display:inline-flex; align-items:center; height:20px; padding:0 8px; border-radius:99px; background:var(--brand-50); color:var(--brand-700); font-size:12px; font-weight:600; vertical-align:2px; margin-left:4px; }
+.cal-day-list { display:flex; flex-direction:column; gap:8px; }
+.cal-day-item { border:1px solid var(--gray-100); border-radius:10px; padding:10px 12px; cursor:pointer; transition:border-color .12s, background .12s, box-shadow .12s; }
+.cal-day-item:hover { border-color:var(--brand-200); background:var(--brand-50); box-shadow:var(--shadow-card); }
+.cdi-title { margin-top:6px; font-size:14px; font-weight:600; color:var(--gray-900); }
+.cdi-title.muted { color:var(--gray-400); text-decoration:line-through; }
+.cal-day-item .tc-meta { margin-top:4px; }
 
 /* ===== 메모(댓글) ===== */
 .cmt-count { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; border-radius:99px; background:var(--brand-50); color:var(--brand-700); font-size:11px; font-weight:600; vertical-align:1px; }

@@ -184,17 +184,17 @@
   function emptyForm() {
     return { title: "", category: "etc", status: "todo", priority: "normal",
       requester: "", siteName: "", clientName: "", amount: undefined,
-      date: "", dueDate: "", confirmationNote: "", checklist: [], comments: [], attachments: [] };
+      date: WM.todayStr(), dueDate: "", confirmationNote: "", checklist: [], comments: [], attachments: [] };
   }
 
-  function openForm(editId) {
+  function openForm(editId, preset) {
     var values;
     if (editId) {
       var t = getTask(editId);
       if (!t) return;
       values = JSON.parse(JSON.stringify(t)); // 깊은 복사 (checklist 포함)
     } else {
-      values = emptyForm();
+      values = Object.assign(emptyForm(), preset || {});
     }
     App.form = { values: values, editId: editId || null, snapshot: JSON.stringify(values) };
     paintForm();
@@ -232,6 +232,26 @@
     } else {
       closeForm();
     }
+  }
+
+  /* ---- 달력 날짜 상세 모달 ---- */
+  function openCalDay(dateStr) {
+    if (!dateStr) return;
+    var dayTasks = App.tasks.filter(function (t) {
+      return (t.dueDate || t.date) === dateStr;
+    });
+    App.calDay = dateStr;
+    var root = document.getElementById("modal-root");
+    root.innerHTML = WM.renderCalendarDayModal(dateStr, dayTasks);
+    var dim = root.querySelector("[data-cal-day-dim]");
+    if (dim) dim.addEventListener("click", function (e) {
+      if (e.target === e.currentTarget) closeCalDay();
+    });
+  }
+
+  function closeCalDay() {
+    App.calDay = null;
+    document.getElementById("modal-root").innerHTML = "";
   }
 
   /** 폼 입력값 → form state 동기화 (즉시 바인딩) */
@@ -1427,7 +1447,17 @@
       App.cal = { y: calNow.getFullYear(), m: calNow.getMonth() };
       render();
     } else if (act === "cal-open") {
+      if (App.calDay) closeCalDay();
       location.hash = "#/task/" + id;
+    } else if (act === "cal-day") {
+      // 셀 안의 업무 칩(cal-open)은 자체 액션으로 처리되므로 여기 도달 시 셀 클릭
+      openCalDay(el.dataset.date);
+    } else if (act === "cal-day-close") {
+      closeCalDay();
+    } else if (act === "cal-day-new") {
+      var calDayDate = el.dataset.date;
+      closeCalDay();
+      openForm(null, { date: calDayDate });
     } else if (act === "b2g-open-new") {
       openBidForm(null);
     } else if (act === "b2g-open") {
@@ -1590,6 +1620,7 @@
     if (App.contactDetail) return false;                     // 연락처 상세 팝업
     if (App.archiveForm) return false;                       // 아카이브 등록/수정 모달
     if (App.archiveDetail) return false;                     // 아카이브 상세 팝업
+    if (App.calDay) return false;                            // 달력 날짜 상세 팝업
     if (document.getElementById("confirm-root").innerHTML) return false; // 확인 모달
 
     var key = e.key.toLowerCase();
@@ -1668,6 +1699,8 @@
         requestCloseArchiveForm();
       } else if (App.archiveDetail) {
         closeArchiveDetail();
+      } else if (App.calDay) {
+        closeCalDay();
       }
     }
     if (e.key === "Enter" && e.target.id === "arc-cat-input") {

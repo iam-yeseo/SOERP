@@ -377,7 +377,7 @@ WM.renderCalendar = function (tasks, y, m) {
     }).join("");
     if (list.length > 4) chips += '<p class="cal-more">+' + (list.length - 4) + "건</p>";
 
-    cells += '<div class="cal-cell' + (other ? " other" : "") + '">' +
+    cells += '<div class="cal-cell' + (other ? " other" : "") + '" data-action="cal-day" data-date="' + dateStr + '" title="' + dateStr + ' 업무 전체 보기">' +
       '<span class="cal-day' + (dateStr === todayStr ? " today" : "") + (dow === 0 ? " sun" : dow === 6 ? " sat" : "") + '">' + d.getDate() + "</span>" +
       chips + "</div>";
   }
@@ -396,6 +396,54 @@ WM.renderCalendar = function (tasks, y, m) {
       "</div>" +
     "</div>" +
     '<div class="card calendar"><div class="cal-dow">' + dowHead + '</div><div class="cal-grid">' + cells + "</div></div>";
+};
+
+/* ---- 달력 날짜 상세 모달 (해당 날짜의 업무 전체 리스트) ---- */
+WM.renderCalendarDayModal = function (dateStr, tasks) {
+  var list = WM.sortTasks(tasks, "priority");
+  var title = dateStr.slice(0, 4) + "년 " + WM.formatKorean(dateStr);
+
+  var body;
+  if (!list.length) {
+    body = WM.emptyState("이 날짜에 등록된 업무가 없습니다.", "'이 날짜에 업무 추가' 버튼으로 바로 등록할 수 있습니다.");
+  } else {
+    body = '<div class="cal-day-list">' + list.map(function (t) {
+      var overdue = WM.isTaskOverdue(t);
+      var dueToday = WM.isToday(t.dueDate) && t.status !== "done";
+      var meta = "";
+      if (t.siteName) meta += "<span>" + WM.icon("mappin", 13) + WM.esc(t.siteName) + "</span>";
+      if (t.clientName) meta += "<span>" + WM.icon("building", 13) + WM.esc(t.clientName) + "</span>";
+      if (t.requester) meta += "<span>" + WM.icon("user", 13) + WM.esc(t.requester) + "</span>";
+      if (t.amount != null) meta += '<span style="font-weight:500;color:var(--gray-600)">' + WM.formatAmount(t.amount) + "</span>";
+      if (t.checklist && t.checklist.length) {
+        var checked = t.checklist.filter(function (c) { return c.checked; }).length;
+        meta += "<span>" + WM.icon("listchecks", 13) + checked + "/" + t.checklist.length + "</span>";
+      }
+      return '<div class="cal-day-item" data-action="cal-open" data-id="' + t.id + '">' +
+        '<div class="tc-badges">' +
+          WM.badgeCat(t.category) + WM.badgeStatus(t.status) + WM.badgePriority(t.priority) +
+          (overdue ? '<span class="badge b-plain-red">마감 지남</span>' : "") +
+          (dueToday && !overdue ? '<span class="badge b-plain-amber">오늘 마감</span>' : "") +
+        "</div>" +
+        '<p class="cdi-title' + (t.status === "done" || t.status === "cancelled" ? " muted" : "") + '">' + WM.esc(t.title) + "</p>" +
+        (meta ? '<div class="tc-meta">' + meta + "</div>" : "") +
+      "</div>";
+    }).join("") + "</div>";
+  }
+
+  return '<div class="modal-dim" data-cal-day-dim>' +
+    '<div class="modal">' +
+      '<div class="modal-head"><h2>' + title +
+        ' <span class="cal-day-count">업무 ' + list.length + "건</span></h2>" +
+        '<button type="button" class="icon-btn" data-action="cal-day-close" aria-label="닫기">' + WM.icon("x", 18) + "</button></div>" +
+      '<div class="modal-body">' + body + "</div>" +
+      '<div class="modal-foot">' +
+        '<button type="button" class="btn btn-outline" data-action="cal-day-new" data-date="' + dateStr + '">' + WM.icon("plus", 15) + "이 날짜에 업무 추가</button>" +
+        '<span style="flex:1"></span>' +
+        '<button type="button" class="btn btn-primary" data-action="cal-day-close">닫기</button>' +
+      "</div>" +
+    "</div>" +
+  "</div>";
 };
 
 /* ---- 템플릿 페이지 (웹에서 직접 수정 가능) ---- */
