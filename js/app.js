@@ -101,6 +101,9 @@
     } else if (r.page === "bidcalc") {
       view.innerHTML = WM.renderBidCalc();
       WM.bindBidCalc();
+    } else if (r.page === "pdfwand") {
+      view.innerHTML = WM.renderPdfWand();
+      WM.bindPdfWand();
     } else if (r.page === "contacts") {
       view.innerHTML = WM.renderContactsShell(App, App.contacts.length);
       refreshContactList();
@@ -149,6 +152,7 @@
     { href: "#/templates", page: "templates", label: "업무 템플릿", icon: "filestack" },
     { href: "#/b2g", page: "b2g", label: "나라장터", icon: "gavel" },
     { href: "#/bidcalc", page: "bidcalc", label: "입찰 금액 도우미", icon: "calculator" },
+    { href: "#/pdfwand", page: "pdfwand", label: "PDF 마법봉", icon: "wand" },
     { href: "#/contacts", page: "contacts", label: "연락처", icon: "contact" },
     { href: "#/archives", page: "archives", label: "아카이브", icon: "archive" },
     { href: "#/settings", page: "settings", label: "설정", icon: "settings" }
@@ -1621,6 +1625,7 @@
     if (App.archiveForm) return false;                       // 아카이브 등록/수정 모달
     if (App.archiveDetail) return false;                     // 아카이브 상세 팝업
     if (App.calDay) return false;                            // 달력 날짜 상세 팝업
+    if (WM.pdfWand && WM.pdfWand.preview) return false;      // PDF 마법봉 미리보기 팝업
     if (document.getElementById("confirm-root").innerHTML) return false; // 확인 모달
 
     var key = e.key.toLowerCase();
@@ -1701,6 +1706,8 @@
         closeArchiveDetail();
       } else if (App.calDay) {
         closeCalDay();
+      } else if (WM.pdfWand && WM.pdfWand.preview) {
+        WM.closePdfPreview();
       }
     }
     if (e.key === "Enter" && e.target.id === "arc-cat-input") {
