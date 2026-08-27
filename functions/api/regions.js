@@ -21,9 +21,9 @@
 
 /* REGION_API_URL이 없을 때 시도해 볼 후보. 첫 번째로 시군구가 뽑히는 곳을 씁니다. */
 const DEFAULT_ENDPOINTS = [
-  "https://apis.data.go.kr/1741000/StdgOrgnztSignguStats/getStdgOrgnztSignguStatsList",
-  "https://apis.data.go.kr/1741000/LocalGovernmentOrganizationSiGunGu/getLocalGovernmentOrganizationSiGunGuList",
-  "https://apis.data.go.kr/1741000/RegistrationOfLocalGovernment/getRegistrationOfLocalGovernmentList"
+  "https://apis.data.go.kr/1741000/LocalGovernment/getLocalGovernment",
+  "https://apis.data.go.kr/1741000/StdgOrgnztSignguStats/getLocalGovernment",
+  "https://apis.data.go.kr/1741000/RegistrationOfLocalGovernment/getLocalGovernment"
 ];
 
 const KEY_VARS = [
@@ -141,9 +141,12 @@ function parseXmlRows(text) {
 
 function buildUrl(base, serviceKey, pageNo, numOfRows) {
   var url = base.split("?")[0];
-  var qs = [];
   // 인증키가 이미 퍼센트 인코딩된 형태(Encoding)면 그대로, 아니면 인코딩해서 붙입니다.
-  qs.push("serviceKey=" + (/%[0-9A-Fa-f]{2}/.test(serviceKey) ? serviceKey : encodeURIComponent(serviceKey)));
+  var key = /%[0-9A-Fa-f]{2}/.test(serviceKey) ? serviceKey : encodeURIComponent(serviceKey);
+  var qs = [];
+  // 데이터마다 파라미터 이름이 serviceKey / ServiceKey로 갈려서 둘 다 보냅니다.
+  qs.push("serviceKey=" + key);
+  qs.push("ServiceKey=" + key);
   qs.push("pageNo=" + pageNo);
   qs.push("numOfRows=" + numOfRows);
   qs.push("type=json");

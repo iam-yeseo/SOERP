@@ -33,10 +33,12 @@ Cloudflare 대시보드 → **Workers & Pages → 해당 Pages 프로젝트 → 
 ## 2. `REGION_API_URL` 값 찾기
 
 1. 공공데이터포털에서 승인받은 데이터의 **상세 페이지 → ‘요청 변수’/‘상세 기능’** 탭을 엽니다.
-2. **요청 URL**을 복사합니다. 예)
-   `https://apis.data.go.kr/1741000/OOOO/getOOOOList`
-3. `?serviceKey=...` 같은 **물음표 뒷부분은 지우고** 넣습니다.
+2. 오퍼레이션 오른쪽 **‘미리보기’** 를 누르면 새 탭이 열립니다.
+   그 탭의 **주소창에 찍힌 URL**이 정답입니다. 예)
+   `https://apis.data.go.kr/1741000/OOOO/getLocalGovernment`
+3. `?ServiceKey=...` 같은 **물음표 뒷부분은 지우고** 넣습니다.
    인증키·`pageNo`·`numOfRows`·`type`은 함수가 알아서 붙입니다.
+   (파라미터 이름이 `serviceKey`인지 `ServiceKey`인지도 신경 쓸 필요 없습니다. 둘 다 보냅니다.)
 
 > `REGION_API_URL`을 넣지 않으면 `functions/api/regions.js`의 `DEFAULT_ENDPOINTS`
 > 후보를 차례로 시도합니다. 승인받은 데이터의 실제 주소는 계정마다 다를 수 있으니
