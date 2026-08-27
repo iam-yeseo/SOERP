@@ -119,7 +119,7 @@ window.WM = window.WM || {};
           '<p class="bc-section-title">공사지역</p>' +
           '<div class="bc-text-row">' +
             '<input class="input bc-text-input" id="bc-in-region" ' +
-              'placeholder="예: 강북구 / 중구 / 서울시" ' +
+              'placeholder="예: 강북구 / 중구 / 미아동 / 서울시" ' +
               'value="' + WM.esc(s.regionQuery || "") + '" />' +
           "</div>" +
           '<div class="bc-region-result" id="bc-region-result" aria-live="polite"></div>' +
@@ -168,7 +168,7 @@ window.WM = window.WM || {};
       "</div>";
 
     return '<div class="page-head page-head-row"><div><h1>입찰 금액 도우미</h1>' +
-        "<p>입찰금액·공급가액·대금지급 금액을 입력하면 보증금, 세액, 한글 금액이 자동 계산됩니다. 공사지역을 입력하면 해당하는 지방자치단체를 찾아드립니다.</p></div>" +
+        "<p>입찰금액·공급가액·대금지급 금액을 입력하면 보증금, 세액, 한글 금액이 자동 계산됩니다. 공사지역을 입력하면 시도·시군구는 물론 읍면동·리까지 찾아드립니다.</p></div>" +
         '<button type="button" class="btn btn-outline" data-action="bidcalc-reset">' +
           '<span>' + WM.icon("rotate", 16) + "</span><span>초기화</span></button>" +
       "</div>" +
@@ -181,16 +181,19 @@ window.WM = window.WM || {};
   /* ---- 공사지역 조회 결과 ---- */
 
   var SOURCE_NOTE = {
-    api: "공공데이터포털 ‘행정안전부_통계연보_지방자치단체’ 자료 기준",
-    fallback: "내장 지자체 표 기준 (오픈API 미연결)"
+    api: "공공데이터포털 ‘행정안전부_행정표준코드_법정동코드’ 기준",
+    fallback: "내장 시도·시군구 표 기준 (오픈API 미연결 — 읍면동·리는 조회되지 않습니다)"
   };
 
-  /** 조회 결과 한 줄: 시도 + 시군구 */
+  /** 조회 결과 한 줄. 앞 조각은 흐리게, 마지막 조각(실제 지역명)은 진하게. */
   function regionLine(line) {
+    var parts = line.parts || [];
+    var lead = parts.slice(0, -1).join(" ");
+    var last = parts[parts.length - 1] || "";
     return '<li class="bc-region-item">' +
         '<span class="bc-region-pin">' + WM.icon("mappin", 14) + "</span>" +
-        '<span class="bc-region-sido">' + WM.esc(line.sido) + "</span>" +
-        (line.sgg ? '<span class="bc-region-sgg">' + WM.esc(line.sgg) + "</span>" : "") +
+        (lead ? '<span class="bc-region-sido">' + WM.esc(lead) + "</span>" : "") +
+        '<span class="bc-region-sgg">' + WM.esc(last) + "</span>" +
       "</li>";
   }
 
@@ -198,19 +201,25 @@ window.WM = window.WM || {};
     if (!res || res.status === "empty") return "";
 
     if (res.status === "notfound") {
-      return '<p class="bc-region-none">‘' + WM.esc(res.query) + "’와(과) 일치하는 지방자치단체를 찾지 못했습니다.</p>" +
+      return '<p class="bc-region-none">‘' + WM.esc(res.query) + "’와(과) 일치하는 지역을 찾지 못했습니다.</p>" +
         '<p class="bc-region-src">' + WM.esc(SOURCE_NOTE[res.source] || "") + "</p>";
     }
 
     var head = res.items.length === 1
       ? "이 공사의 지역은 <strong>" + WM.esc(res.items[0].short) + "</strong>입니다."
-      : "이 공사의 지역은 아래 <strong>" + res.items.length + "곳</strong> 중 하나입니다.";
+      : "이 공사의 지역은 아래 <strong>" + res.total + "곳</strong> 중 하나입니다.";
 
     var lines = [];
     res.items.forEach(function (it) { it.lines.forEach(function (l) { lines.push(regionLine(l)); }); });
 
+    // 너무 많이 걸리면 앞쪽만 보여주고 몇 곳이 더 있는지 알려줍니다.
+    var more = res.total - res.items.length;
+    var moreHtml = more > 0
+      ? '<p class="bc-region-more">' + more + "곳이 더 있습니다. 지역명을 더 자세히 입력해보세요.</p>"
+      : "";
+
     return '<p class="bc-region-head">' + head + "</p>" +
-      '<ul class="bc-region-list">' + lines.join("") + "</ul>" +
+      '<ul class="bc-region-list">' + lines.join("") + "</ul>" + moreHtml +
       '<p class="bc-region-src">' + WM.esc(SOURCE_NOTE[res.source] || "") + "</p>";
   }
 
@@ -299,24 +308,33 @@ window.WM = window.WM || {};
       });
     }
 
-    // 공사지역: 입력할 때마다 지방자치단체를 찾아 보여줍니다.
+    // 공사지역: 입력이 멈추면 오픈API로 시도·시군구·읍면동·리를 찾아 보여줍니다.
     var regionEl = document.getElementById("bc-in-region");
     var regionOut = document.getElementById("bc-region-result");
+    var regionTimer = null;
+    var regionSeq = 0; // 늦게 도착한 옛 응답이 최신 결과를 덮지 않도록
 
     function showRegion() {
       if (!regionEl || !regionOut || !WM.regionSearch) return;
-      regionOut.innerHTML = regionResultHtml(WM.regionSearch(regionEl.value));
+      var seq = ++regionSeq;
+      var q = regionEl.value.trim();
+      if (!q) { regionOut.innerHTML = ""; return; }
+      regionOut.innerHTML = '<p class="bc-region-loading">지역을 찾는 중…</p>';
+      WM.regionSearch(q).then(function (res) {
+        if (seq !== regionSeq) return; // 그 사이 다시 입력했으면 버립니다.
+        regionOut.innerHTML = regionResultHtml(res);
+      });
     }
 
     if (regionEl) {
       regionEl.addEventListener("input", function () {
         s.regionQuery = regionEl.value;
         saveState(s);
-        showRegion();
+        // 글자를 칠 때마다 부르지 않도록 잠깐 기다립니다.
+        clearTimeout(regionTimer);
+        regionTimer = setTimeout(showRegion, 350);
       });
       showRegion(); // 저장된 값이 있으면 바로 표시
-      // 오픈API 목록이 도착하면 같은 입력으로 다시 조회합니다.
-      if (WM.loadRegions) WM.loadRegions().then(showRegion).catch(function () { /* 무시 */ });
     }
 
     recalc();
