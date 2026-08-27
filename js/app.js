@@ -1564,10 +1564,14 @@
         console.error("아카이브 다운로드 실패", err);
         WM.toast("다운로드에 실패했습니다. 네트워크를 확인해주세요.", "error");
       });
+    } else if (act === "bidcalc-copy-name") {
+      var siteName = WM.getBidCalcProjectName();
+      if (!siteName) { WM.toast("복사할 공사명이 없습니다.", "error"); return; }
+      WM.copyText(siteName, "공사명을 복사했습니다.");
     } else if (act === "bidcalc-reset") {
       WM.confirmDialog({
         title: "입력값을 초기화할까요?",
-        description: "입찰 금액 도우미에 입력된 모든 금액과 퍼센트가 지워집니다.",
+        description: "입찰 금액 도우미에 입력된 모든 금액·퍼센트와 공사명·공사지역이 지워집니다.",
         confirmLabel: "초기화", danger: true
       }, function () {
         WM.resetBidCalc();
