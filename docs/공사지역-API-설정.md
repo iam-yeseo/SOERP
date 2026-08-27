@@ -5,21 +5,76 @@
 시도·시군구는 물론 **읍면동·리까지** 조회됩니다.
 
 인증키가 브라우저로 새어 나가지 않도록, 오픈API는 브라우저가 직접 부르지 않고
-Cloudflare Pages Function(`functions/api/regions.js`)이 대신 호출합니다.
+서버 쪽 프록시가 대신 호출합니다.
 
 ```
-브라우저 ──GET /api/regions?q=미아동──▶ Cloudflare Pages Function ──인증키 첨부──▶ 공공데이터포털
+브라우저 ──GET /api/regions?q=미아동──▶ 프록시 ──인증키 첨부──▶ 공공데이터포털
                                         (인증키는 여기에만 있음)
 ```
 
 전체 목록을 내려받지 않고 **검색어를 그때그때 넘기는 방식**입니다.
 (`locatadd_nm` 파라미터로 서버에서 검색됩니다.)
 
+## 프록시를 어디에 둘지 — 먼저 이것부터
+
+정적 사이트를 무엇이 서빙하느냐에 따라 두 가지입니다.
+**`/api/regions` 가 404라면 A가 아니라 B입니다.**
+
+| | 쓰는 파일 | 조건 |
+|---|---|---|
+| **A. Cloudflare Pages** | `functions/api/regions.js` | 저장소가 Cloudflare **Pages**에 Git 연결돼 있을 것 |
+| **B. Cloudflare Worker** | `worker/regions-worker.js` | 그 외 전부 (GitHub Pages 등) |
+
+### 지금 어느 쪽인지 확인하기
+
+Cloudflare 대시보드 → Workers & Pages → 해당 Pages 프로젝트 →
+최근 **Deployment → Build log** 를 열어 `Functions` 관련 줄을 봅니다.
+
+- `Found Functions directory` / `Compiled Worker successfully` → **A**. 그런데도 404면
+  Settings의 **Root directory**가 `/` 인지 확인해주세요. 다른 폴더로 잡혀 있으면
+  `functions/`를 못 찾습니다.
+- Functions 언급이 아예 없음, 또는 Pages 프로젝트 자체가 없음 → **B**
+
+> 저장소에 GitHub Pages(`pages build and deployment`) 워크플로도 함께 돌고 있습니다.
+> Cloudflare로만 배포한다면 GitHub 저장소 Settings → Pages 에서 꺼두는 편이 헷갈리지 않습니다.
+> (`CNAME` 파일은 GitHub Pages 전용이라 Cloudflare Pages에서는 무시됩니다.)
+
+---
+
+## B를 쓸 경우 — Worker 만들기
+
+1. Cloudflare 대시보드 → **Workers & Pages → Create → Worker** 로 새 Worker를 만듭니다.
+2. **Edit code** 를 열고 `worker/regions-worker.js` 내용을 **통째로 붙여넣습니다.**
+   import이 없는 단일 파일이라 그대로 동작합니다.
+3. 아래 1번대로 환경변수를 넣습니다.
+4. **Settings → Domains & Routes → Add route** 에 이렇게 겁니다.
+
+   ```
+   soerp.yeseo.im/api/*
+   ```
+
+   이러면 정적 사이트보다 Worker가 먼저 가로채므로 **프런트엔드는 손댈 필요가 없습니다.**
+
+5. 라우트를 못 걸고 `xxx.workers.dev` 주소를 쓸 거라면, `index.html` 의
+   `regionApi.js` **앞에** 한 줄만 넣어주세요. (Worker가 CORS 헤더를 붙입니다.)
+
+   ```html
+   <script>window.SOERP_REGION_API = "https://xxx.workers.dev/api/regions";</script>
+   ```
+
+`wrangler` CLI가 편하면 `worker/wrangler.toml` 이 준비돼 있습니다.
+
+```bash
+npx wrangler secret put DATA_GO_KR_SERVICE_KEY --config worker/wrangler.toml
+npx wrangler deploy --config worker/wrangler.toml
+```
+
 ---
 
 ## 1. 환경변수 넣기
 
-Cloudflare 대시보드 → **Workers & Pages → 해당 Pages 프로젝트 → Settings → Variables and Secrets**
+Pages를 쓰면 **Pages 프로젝트 → Settings → Variables and Secrets**,
+Worker를 쓰면 **Worker → Settings → Variables and Secrets** 입니다.
 
 | 변수명 | 필수 | 값 |
 |---|:---:|---|
@@ -31,7 +86,7 @@ Cloudflare 대시보드 → **Workers & Pages → 해당 Pages 프로젝트 → 
   `SERVICE_KEY`, `DATA_PORTAL_KEY` 이름으로 넣어도 인식합니다.
 - **Encoding / Decoding 인증키 아무거나** 넣어도 됩니다.
   `%2B` 같은 퍼센트 인코딩이 들어 있으면 그대로, 아니면 함수가 인코딩해서 붙입니다.
-- 값을 바꾼 뒤에는 **재배포(Retry deployment)** 를 해야 반영됩니다.
+- 값을 바꾼 뒤에는 **재배포**(Pages는 Retry deployment, Worker는 Deploy)를 해야 반영됩니다.
 
 ## 2. 요청 URL — 보통은 안 넣어도 됩니다
 
@@ -124,9 +179,14 @@ https://soerp.yeseo.im/api/regions
 전남광주
 ```
 
-## 참고 — Pages가 아니라 Workers를 쓴다면
+## 참고 — 두 파일의 관계
 
-`functions/api/regions.js`는 **Cloudflare Pages Functions** 규칙(`functions/` 폴더 =
-라우트)을 따릅니다. Workers로 배포한다면 이 파일의 `onRequestGet`을
-`export default { fetch(request, env) { ... } }` 형태로 감싸고
-`/api/regions` 경로를 라우트에 연결하면 그대로 쓸 수 있습니다.
+`functions/api/regions.js`(Pages Functions)와 `worker/regions-worker.js`(Worker)는
+**검색 로직·응답 형식·자가 점검이 모두 같습니다.** 차이는 진입점뿐입니다.
+
+| | 진입점 | CORS |
+|---|---|---|
+| `functions/api/regions.js` | `export async function onRequestGet(context)` | 같은 도메인이라 불필요 |
+| `worker/regions-worker.js` | `export default { fetch(request, env) }` | 붙임 (workers.dev 대응) |
+
+한쪽을 고치면 다른 쪽도 같이 고쳐야 합니다.

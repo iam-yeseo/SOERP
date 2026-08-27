@@ -9,7 +9,11 @@
 window.WM = window.WM || {};
 
 (function () {
-  var ENDPOINT = "/api/regions";
+  // 기본은 같은 도메인의 /api/regions.
+  // 별도 Worker를 workers.dev 주소로 띄웠다면 index.html에서
+  //   window.SOERP_REGION_API = "https://xxx.workers.dev/api/regions";
+  // 한 줄만 넣어주면 그쪽으로 부릅니다.
+  var ENDPOINT = window.SOERP_REGION_API || "/api/regions";
   var MAX_SHOW = 40;          // 한 번에 보여줄 최대 건수
   var queryCache = {};        // 검색어 → 결과 (탭을 닫을 때까지 유지)
 
@@ -226,7 +230,15 @@ window.WM = window.WM || {};
     var q = alias ? alias.name : query;
 
     return fetch(ENDPOINT + "?q=" + encodeURIComponent(q), { headers: { Accept: "application/json" } })
-      .then(function (res) { return res.json().catch(function () { return null; }); })
+      .then(function (res) {
+        // 정적 호스팅이라 프록시가 없으면 404 HTML이 돌아옵니다.
+        if (res.status === 404) {
+          console.warn("지역 조회 프록시(" + ENDPOINT + ")를 찾을 수 없습니다. " +
+            "Cloudflare Pages Functions가 켜져 있는지, 또는 Worker 라우트가 걸려 있는지 확인해주세요.");
+          return null;
+        }
+        return res.json().catch(function () { return null; });
+      })
       .then(function (data) {
         if (!data || !data.ok) {
           if (data && data.hint) console.warn("법정동코드 오픈API:", data.error, "—", data.detail || "", data.hint);
