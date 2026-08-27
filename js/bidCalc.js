@@ -1,7 +1,8 @@
 /* ===== 입찰 금액 도우미 =====
    엑셀 "소으니의 입찰금액 도우미" 시트를 웹으로 옮긴 계산기입니다.
-   입력: 입찰금액 / 공급가액 / 대금지급 총액·퍼센트(계약금·중도금·잔금)
+   입력: 입찰금액 / 공급가액 / 대금지급 총액·퍼센트(계약금·중도금·잔금) / 공사명 / 공사지역
    나머지(보증금·세액·합계·한글변환)는 모두 자동 계산됩니다.
+   공사지역은 WM.regionSearch로 지방자치단체를 찾아 어느 지역인지 알려줍니다.
    입력값은 localStorage에 저장되어 새로고침해도 유지됩니다. */
 window.WM = window.WM || {};
 
@@ -33,7 +34,8 @@ window.WM = window.WM || {};
   function defaults() {
     // 퍼센트 기본값은 엑셀 원본과 동일하게 비워둠(0)
     return { bidAmount: 0, supplyAmount: 0, payTotal: 0,
-      pctContract: 0, pctInterim: 0, pctBalance: 0 };
+      pctContract: 0, pctInterim: 0, pctBalance: 0,
+      projectName: "", regionQuery: "" };
   }
 
   function loadState() {
@@ -47,6 +49,12 @@ window.WM = window.WM || {};
   function saveState(s) {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch (e) { /* 무시 */ }
   }
+
+  /** 복사 버튼이 읽어갈 현재 공사명 */
+  WM.getBidCalcProjectName = function () {
+    var el = document.getElementById("bc-in-name");
+    return el ? el.value.trim() : "";
+  };
 
   /** 저장된 입력값 전체 삭제 (초기화 버튼) */
   WM.resetBidCalc = function () {
@@ -95,6 +103,30 @@ window.WM = window.WM || {};
       '<p class="bc-hangul">일금 <span id="' + outId + '-k">영</span> 원</p>';
   }
 
+  /** 공사명 + 공사지역 카드 (공사명은 복사 버튼, 공사지역은 지자체 조회) */
+  function siteCard(s) {
+    return '<div class="card bc-card">' +
+        '<h2 class="bc-title">공사명 입력</h2>' +
+        '<div class="bc-text-row">' +
+          '<input class="input bc-text-input" id="bc-in-name" ' +
+            'placeholder="예: 여수 신월코아루 내외벽 균열보수" ' +
+            'value="' + WM.esc(s.projectName || "") + '" />' +
+          '<button type="button" class="btn btn-outline bc-copy-btn" data-action="bidcalc-copy-name" title="공사명 복사">' +
+            "<span>" + WM.icon("copy", 15) + "</span><span>복사</span></button>" +
+        "</div>" +
+        '<p class="bc-help">입력한 공사명은 저장되어 다음에 들어와도 그대로 남아 있습니다.</p>' +
+        '<div class="bc-section">' +
+          '<p class="bc-section-title">공사지역</p>' +
+          '<div class="bc-text-row">' +
+            '<input class="input bc-text-input" id="bc-in-region" ' +
+              'placeholder="예: 강북구 / 중구 / 서울시" ' +
+              'value="' + WM.esc(s.regionQuery || "") + '" />' +
+          "</div>" +
+          '<div class="bc-region-result" id="bc-region-result" aria-live="polite"></div>' +
+        "</div>" +
+      "</div>";
+  }
+
   /** 입찰 금액 도우미 페이지 */
   WM.renderBidCalc = function () {
     var s = loadState();
@@ -136,15 +168,51 @@ window.WM = window.WM || {};
       "</div>";
 
     return '<div class="page-head page-head-row"><div><h1>입찰 금액 도우미</h1>' +
-        "<p>입찰금액·공급가액·대금지급 금액을 입력하면 보증금, 세액, 한글 금액이 자동 계산됩니다.</p></div>" +
+        "<p>입찰금액·공급가액·대금지급 금액을 입력하면 보증금, 세액, 한글 금액이 자동 계산됩니다. 공사지역을 입력하면 해당하는 지방자치단체를 찾아드립니다.</p></div>" +
         '<button type="button" class="btn btn-outline" data-action="bidcalc-reset">' +
           '<span>' + WM.icon("rotate", 16) + "</span><span>초기화</span></button>" +
       "</div>" +
       '<div class="bidcalc-grid">' +
         '<div class="bidcalc-col">' + bidCard + supplyCard + "</div>" +
-        '<div class="bidcalc-col">' + payCard + "</div>" +
+        '<div class="bidcalc-col">' + payCard + siteCard(s) + "</div>" +
       "</div>";
   };
+
+  /* ---- 공사지역 조회 결과 ---- */
+
+  var SOURCE_NOTE = {
+    api: "공공데이터포털 ‘행정안전부_통계연보_지방자치단체’ 자료 기준",
+    fallback: "내장 지자체 표 기준 (오픈API 미연결)"
+  };
+
+  /** 조회 결과 한 줄: 시도 + 시군구 */
+  function regionLine(line) {
+    return '<li class="bc-region-item">' +
+        '<span class="bc-region-pin">' + WM.icon("mappin", 14) + "</span>" +
+        '<span class="bc-region-sido">' + WM.esc(line.sido) + "</span>" +
+        (line.sgg ? '<span class="bc-region-sgg">' + WM.esc(line.sgg) + "</span>" : "") +
+      "</li>";
+  }
+
+  function regionResultHtml(res) {
+    if (!res || res.status === "empty") return "";
+
+    if (res.status === "notfound") {
+      return '<p class="bc-region-none">‘' + WM.esc(res.query) + "’와(과) 일치하는 지방자치단체를 찾지 못했습니다.</p>" +
+        '<p class="bc-region-src">' + WM.esc(SOURCE_NOTE[res.source] || "") + "</p>";
+    }
+
+    var head = res.items.length === 1
+      ? "이 공사의 지역은 <strong>" + WM.esc(res.items[0].short) + "</strong>입니다."
+      : "이 공사의 지역은 아래 <strong>" + res.items.length + "곳</strong> 중 하나입니다.";
+
+    var lines = [];
+    res.items.forEach(function (it) { it.lines.forEach(function (l) { lines.push(regionLine(l)); }); });
+
+    return '<p class="bc-region-head">' + head + "</p>" +
+      '<ul class="bc-region-list">' + lines.join("") + "</ul>" +
+      '<p class="bc-region-src">' + WM.esc(SOURCE_NOTE[res.source] || "") + "</p>";
+  }
 
   /** 입력 이벤트 바인딩 + 자동 계산 (렌더 직후 호출) */
   WM.bindBidCalc = function () {
@@ -221,6 +289,35 @@ window.WM = window.WM || {};
           recalc();
         });
       });
+
+    // 공사명: 입력한 그대로 저장 (복사 버튼은 app.js에서 처리)
+    var nameEl = document.getElementById("bc-in-name");
+    if (nameEl) {
+      nameEl.addEventListener("input", function () {
+        s.projectName = nameEl.value;
+        saveState(s);
+      });
+    }
+
+    // 공사지역: 입력할 때마다 지방자치단체를 찾아 보여줍니다.
+    var regionEl = document.getElementById("bc-in-region");
+    var regionOut = document.getElementById("bc-region-result");
+
+    function showRegion() {
+      if (!regionEl || !regionOut || !WM.regionSearch) return;
+      regionOut.innerHTML = regionResultHtml(WM.regionSearch(regionEl.value));
+    }
+
+    if (regionEl) {
+      regionEl.addEventListener("input", function () {
+        s.regionQuery = regionEl.value;
+        saveState(s);
+        showRegion();
+      });
+      showRegion(); // 저장된 값이 있으면 바로 표시
+      // 오픈API 목록이 도착하면 같은 입력으로 다시 조회합니다.
+      if (WM.loadRegions) WM.loadRegions().then(showRegion).catch(function () { /* 무시 */ });
+    }
 
     recalc();
   };
