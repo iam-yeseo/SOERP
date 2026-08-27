@@ -51,7 +51,7 @@ https://apis.data.go.kr/1741000/StanReginCd/getStanReginCdList
 배포된 주소에서 **검색어 없이** `/api/regions` 를 열면 스스로 점검해서 알려줍니다.
 
 ```
-https://soeun.yeseo.im/api/regions
+https://soerp.yeseo.im/api/regions
 ```
 
 ```json
