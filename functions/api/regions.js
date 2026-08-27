@@ -180,6 +180,60 @@ function shape(rows, q) {
   return { exact: exact, items: items };
 }
 
+/**
+ * 설정 점검. /api/regions 를 q 없이 열면 실행됩니다.
+ * 인증키 값 자체는 절대 응답에 담지 않습니다. (설정 여부와 길이만)
+ */
+async function selfCheck(serviceKey, keyVar, base, headers) {
+  var report = {
+    ok: false,
+    점검: "공사지역 조회 설정",
+    인증키: serviceKey
+      ? "설정됨 (환경변수 " + keyVar + ", " + serviceKey.length + "자)"
+      : "없음 — Cloudflare 환경변수에 DATA_GO_KR_SERVICE_KEY를 추가하고 재배포해주세요.",
+    요청주소: base
+  };
+
+  if (!serviceKey) {
+    report.판정 = "인증키를 먼저 넣어주세요.";
+    return new Response(JSON.stringify(report, null, 2),
+      { status: 502, headers: { "Content-Type": headers["Content-Type"], "Cache-Control": "no-store" } });
+  }
+
+  // 시도 / 시군구 / 읍면동을 하나씩 찔러봅니다.
+  var probes = ["서울특별시", "강북구", "미아동"];
+  var results = await Promise.all(probes.map(function (p) {
+    return callApi(base, serviceKey, p)
+      .then(function (rows) {
+        return { 검색어: p, 결과수: rows.length, 예시: rows.length ? clean(rows[0].locatadd_nm) : "" };
+      })
+      .catch(function (e) { return { 검색어: p, 오류: String(e && e.message || e) }; });
+  }));
+  report.검사 = results;
+
+  var errored = results.filter(function (r) { return r.오류; });
+  var hitSido = results[0].결과수 > 0;
+  var hitDeep = (results[1].결과수 > 0) || (results[2].결과수 > 0);
+
+  if (errored.length === results.length) {
+    report.판정 = "오픈API 호출이 모두 실패했습니다: " + errored[0].오류;
+    report.hint = "인증키가 승인·활성화되었는지, REGION_API_URL이 맞는지 확인해주세요.";
+  } else if (hitDeep) {
+    report.ok = true;
+    report.판정 = "정상입니다. 시도·시군구·읍면동까지 모두 검색됩니다.";
+  } else if (hitSido) {
+    report.판정 = "locatadd_nm이 완전일치로만 동작합니다. (시도는 되는데 '강북구'·'미아동'이 0건)";
+    report.hint = "이 결과를 그대로 알려주시면 검색어에 상위 지역명을 붙이는 방식으로 고치겠습니다.";
+  } else {
+    report.판정 = "호출은 되는데 결과가 0건입니다. 인증키 승인 상태를 확인해주세요.";
+  }
+
+  return new Response(JSON.stringify(report, null, 2), {
+    status: report.ok ? 200 : 502,
+    headers: { "Content-Type": headers["Content-Type"], "Cache-Control": "no-store" }
+  });
+}
+
 export async function onRequestGet(context) {
   var headers = {
     "Content-Type": "application/json; charset=utf-8",
@@ -188,17 +242,19 @@ export async function onRequestGet(context) {
 
   var url = new URL(context.request.url);
   var q = (url.searchParams.get("q") || "").replace(/\s+/g, " ").trim();
-  if (!q) {
-    return new Response(JSON.stringify({ ok: false, error: "검색어(q)가 없습니다." }),
-      { status: 400, headers: headers });
-  }
   if (q.length > 50) q = q.slice(0, 50); // locatadd_nm 항목크기
 
   var env = context.env || {};
-  var serviceKey = "";
+  var serviceKey = "", keyVar = "";
   for (var i = 0; i < KEY_VARS.length; i++) {
-    if (env[KEY_VARS[i]]) { serviceKey = String(env[KEY_VARS[i]]).trim(); break; }
+    if (env[KEY_VARS[i]]) { serviceKey = String(env[KEY_VARS[i]]).trim(); keyVar = KEY_VARS[i]; break; }
   }
+
+  var base = String(env.REGION_API_URL || DEFAULT_ENDPOINT).trim();
+
+  // q 없이 열면 설정이 제대로 됐는지 스스로 점검해서 알려줍니다.
+  if (!q) return selfCheck(serviceKey, keyVar, base, headers);
+
   if (!serviceKey) {
     return new Response(JSON.stringify({
       ok: false,
@@ -206,8 +262,6 @@ export async function onRequestGet(context) {
       hint: "Cloudflare Pages > Settings > Variables and Secrets에 DATA_GO_KR_SERVICE_KEY를 추가해주세요."
     }), { status: 502, headers: headers });
   }
-
-  var base = String(env.REGION_API_URL || DEFAULT_ENDPOINT).trim();
 
   try {
     var found = await search(base, serviceKey, q);
