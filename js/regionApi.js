@@ -1,22 +1,23 @@
-/* ===== 지방자치단체(시도·시군구) 조회 =====
-   공공데이터포털 '행정안전부_통계연보_지방자치단체' 오픈API를
-   Cloudflare Pages Function(/api/regions)을 통해 받아옵니다.
+/* ===== 지방자치단체·법정동 조회 =====
+   공공데이터포털 '행정안전부_행정표준코드_법정동코드'(StanReginCd)를
+   Cloudflare Pages Function(/api/regions?q=...)을 통해 검색합니다.
+   시도·시군구뿐 아니라 읍면동·리까지 찾습니다.
    인증키는 Cloudflare 환경변수에만 있고 브라우저로는 내려오지 않습니다.
 
-   API가 아직 연결되지 않았거나 응답이 없으면 아래 내장 표(FALLBACK_SGG)로 대신 조회합니다.
-   화면에는 어느 쪽을 썼는지 함께 표시합니다. */
+   오픈API가 아직 연결되지 않았거나 응답이 없으면 아래 내장 표(FALLBACK_SGG)로
+   시도·시군구까지만 대신 조회합니다. 화면에는 어느 쪽을 썼는지 함께 표시합니다. */
 window.WM = window.WM || {};
 
 (function () {
   var ENDPOINT = "/api/regions";
-  var CACHE_KEY = "soerp-regions-cache";
-  var CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7일
+  var MAX_SHOW = 40;          // 한 번에 보여줄 최대 건수
+  var queryCache = {};        // 검색어 → 결과 (탭을 닫을 때까지 유지)
 
   /* ---- 시도 기준표 ----
      name    : 공식 명칭 (화면에 그대로 표시)
      short   : "이 공사의 지역은 ○○입니다"에 쓰는 짧은 이름
      aliases : 사용자가 줄여 칠 만한 표기
-     displays: 결과에 찍을 줄. 기본은 공식 명칭 한 줄. */
+     displays: 결과에 찍을 줄. 각 줄은 주소를 끊은 조각 배열. 기본은 공식 명칭 한 줄. */
   var SIDO = [
     { name: "서울특별시", short: "서울", aliases: ["서울", "서울시"] },
     { name: "부산광역시", short: "부산", aliases: ["부산", "부산시"] },
@@ -38,7 +39,7 @@ window.WM = window.WM || {};
     // 통합 지자체라 공식 명칭과 줄임말을 두 줄로 함께 보여줍니다.
     { name: "전남광주통합특별시", short: "전남광주",
       aliases: ["전남광주", "전남광주시", "전남광주특별시", "전남광주통합시"],
-      displays: [{ sido: "전남광주통합특별시", sgg: "" }, { sido: "전남광주", sgg: "" }] }
+      displays: [["전남광주통합특별시"], ["전남광주"]] }
   ];
 
   /* ---- 내장 시군구 표 (오픈API를 못 받아왔을 때만 사용) ---- */
@@ -63,132 +64,75 @@ window.WM = window.WM || {};
     "전남광주통합특별시": ""
   };
 
-  /* ---- 조회용 색인 ---- */
+  /* ---- 시도 색인 ---- */
   var sidoByKey = {};   // 별칭/공식명 → 시도 정의
   var sidoByName = {};  // 공식명 → 시도 정의
   SIDO.forEach(function (d, i) {
     d.order = i;
-    if (!d.displays) d.displays = [{ sido: d.name, sgg: "" }];
+    if (!d.displays) d.displays = [[d.name]];
     sidoByName[d.name] = d;
     sidoByKey[d.name] = d;
     d.aliases.forEach(function (a) { if (!sidoByKey[a]) sidoByKey[a] = d; });
   });
 
-  var index = null;    // [{ sidoName, sgg }]
-  var source = "";     // "api" | "fallback"
-  var loaded = false;  // 목록을 한 번이라도 확정했는지
-  var loading = null;
+  var fallback = null;  // [{ sidoName, sgg }] — 오픈API를 못 쓸 때만 씁니다.
 
   function normalize(s) {
     return String(s == null ? "" : s).replace(/\s+/g, "").trim();
   }
 
   function fallbackIndex() {
-    var list = [];
+    if (fallback) return fallback;
+    fallback = [];
     SIDO.forEach(function (d) {
-      var names = (FALLBACK_SGG[d.name] || "").split(" ").filter(Boolean);
-      names.forEach(function (n) { list.push({ sidoName: d.name, sgg: n }); });
+      (FALLBACK_SGG[d.name] || "").split(" ").filter(Boolean).forEach(function (n) {
+        fallback.push({ sidoName: d.name, sgg: n });
+      });
     });
-    return list;
+    return fallback;
   }
 
-  function toIndex(regions) {
-    var seen = {}, list = [];
-    (regions || []).forEach(function (r) {
-      var d = sidoByKey[normalize(r.sido)];
-      if (!d || !r.sgg) return;
-      var key = d.name + "|" + r.sgg;
-      if (seen[key]) return;
-      seen[key] = 1;
-      list.push({ sidoName: d.name, sgg: r.sgg });
-    });
-    return list;
-  }
-
-  function readCache() {
-    try {
-      var raw = localStorage.getItem(CACHE_KEY);
-      if (!raw) return null;
-      var c = JSON.parse(raw);
-      if (!c || !c.at || Date.now() - c.at > CACHE_TTL) return null;
-      if (!c.regions || !c.regions.length) return null;
-      return c.regions;
-    } catch (e) { return null; }
-  }
-
-  function writeCache(regions) {
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), regions: regions })); }
-    catch (e) { /* 저장 실패는 무시 */ }
-  }
-
-  /** 지자체 목록을 준비합니다. 실패해도 reject하지 않고 내장 표로 채웁니다. */
-  /**
-   * 받아온 목록을 색인으로 채택합니다.
-   * 오픈API가 시도 단위만 내려주는 경우(시군구 칼럼이 없는 데이터)도 있어서,
-   * 시군구가 충분히 안 나오면 시군구만 내장 표로 채우고 "mixed"로 표시합니다.
-   * @returns "api" | "mixed" | null (쓸 수 없는 응답)
-   */
-  function adopt(regions) {
-    if (!regions || !regions.length) return null;
-    var built = toIndex(regions);
-    if (built.length >= 10) { index = built; return "api"; }
-    // 시도라도 알아볼 수 있으면 오픈API는 붙은 것으로 봅니다.
-    var hasSido = regions.some(function (r) { return !!sidoByKey[normalize(r.sido)]; });
-    if (!hasSido) return null;
-    index = fallbackIndex();
-    return "mixed";
-  }
-
-  WM.loadRegions = function (force) {
-    if (loaded && !force) return Promise.resolve({ source: source, count: index.length });
-    if (loading && !force) return loading;
-
-    if (!force) {
-      var adopted = adopt(readCache());
-      if (adopted) {
-        source = adopted;
-        loaded = true;
-        return Promise.resolve({ source: source, count: index.length });
-      }
-    }
-
-    loading = fetch(ENDPOINT, { headers: { Accept: "application/json" } })
-      .then(function (res) { return res.json().catch(function () { return null; }); })
-      .then(function (data) {
-        var used = data && data.ok ? adopt(data.regions) : null;
-        if (used) {
-          source = used;
-          loaded = true;
-          writeCache(data.regions);
-          return { source: source, count: index.length };
-        }
-        if (data && data.hint) console.warn("지방자치단체 오픈API:", data.error, "—", data.hint);
-        throw new Error("사용할 수 있는 목록이 없습니다.");
-      })
-      .catch(function () {
-        index = fallbackIndex();
-        source = "fallback";
-        loaded = true;
-        return { source: source, count: index.length };
-      })
-      .then(function (r) { loading = null; return r; });
-
-    return loading;
-  };
-
-  /* ---- 결과 만들기 ---- */
+  /* ---- 결과 항목 만들기 ----
+     item = { level, short, lines: [{ parts: ["서울특별시", "강북구"] }] }
+     level 1=시도, 2=시군구, 3=읍면동, 4=리 */
 
   function sidoItem(d) {
-    return { key: "sido:" + d.name, order: d.order, sub: "", short: d.short, lines: d.displays };
+    return {
+      key: "s:" + d.name, order: d.order, sub: "", level: 1, short: d.short,
+      lines: d.displays.map(function (parts) { return { parts: parts }; })
+    };
   }
 
   function sggItem(sidoName, sgg) {
     var d = sidoByName[sidoName] || { name: sidoName, short: sidoName, order: 99 };
     return {
-      key: "sgg:" + sidoName + "|" + sgg, order: d.order, sub: sgg, short: d.short,
-      lines: [{ sido: d.name, sgg: sgg }]
+      key: "g:" + sidoName + "|" + sgg, order: d.order, sub: sgg, level: 2, short: d.short,
+      lines: [{ parts: [d.name, sgg] }]
     };
   }
+
+  function apiItem(it) {
+    var parts = String(it.full || "").split(/\s+/).filter(Boolean);
+    if (!parts.length) return null;
+    var d = sidoByKey[normalize(parts[0])];
+    return {
+      key: "a:" + (it.code || it.full), order: d ? d.order : 99, sub: it.full,
+      level: it.level || parts.length, short: d ? d.short : parts[0],
+      lines: [{ parts: parts }]
+    };
+  }
+
+  function dedupe(items) {
+    var seen = {}, out = [];
+    items.forEach(function (it) {
+      if (!it || seen[it.key]) return;
+      seen[it.key] = 1;
+      out.push(it);
+    });
+    return out;
+  }
+
+  /* ---- 내장 표 조회 (오픈API를 못 쓸 때) ---- */
 
   function findSido(key) {
     var d = sidoByKey[key];
@@ -196,14 +140,11 @@ window.WM = window.WM || {};
   }
 
   function findSgg(key, onlySido) {
-    var keys = [key];
-    // "강북"처럼 접미사를 뺀 입력도 받아줍니다.
-    if (!/(시|군|구)$/.test(key)) keys = keys.concat([key + "시", key + "군", key + "구"]);
-
+    var keys = /(시|군|구)$/.test(key) ? [key] : [key, key + "시", key + "군", key + "구"];
     var out = [];
     keys.forEach(function (k) {
       if (out.length) return; // 접미사를 붙이지 않은 정확한 일치를 우선합니다.
-      index.forEach(function (r) {
+      fallbackIndex().forEach(function (r) {
         if (r.sgg !== k) return;
         if (onlySido && r.sidoName !== onlySido.name) return;
         out.push(sggItem(r.sidoName, r.sgg));
@@ -212,45 +153,20 @@ window.WM = window.WM || {};
     return out;
   }
 
-  /** 마지막 수단: 이름에 입력이 포함된 지자체를 모읍니다. */
   function findLoose(key) {
     if (key.length < 2) return [];
     var out = [];
     SIDO.forEach(function (d) {
       if (d.name.indexOf(key) >= 0 || d.short.indexOf(key) >= 0) out.push(sidoItem(d));
     });
-    index.forEach(function (r) {
+    fallbackIndex().forEach(function (r) {
       if (r.sgg.indexOf(key) >= 0) out.push(sggItem(r.sidoName, r.sgg));
     });
     return out;
   }
 
-  function dedupe(items) {
-    var seen = {}, out = [];
-    items.forEach(function (it) {
-      if (seen[it.key]) return;
-      seen[it.key] = 1;
-      out.push(it);
-    });
-    out.sort(function (a, b) {
-      return a.order - b.order || a.sub.localeCompare(b.sub, "ko");
-    });
-    return out;
-  }
-
-  /**
-   * 입력한 지역명으로 지방자치단체를 찾습니다.
-   * @returns {{status:string, query:string, source:string, items:Array}}
-   *   status: "empty" | "notfound" | "ok"
-   */
-  WM.regionSearch = function (raw) {
-    var query = String(raw == null ? "" : raw).trim();
-    if (!query) return { status: "empty", query: "", source: source, items: [] };
-    if (!index) index = fallbackIndex();
-
-    var key = normalize(query);
-
-    // 1) "서울강북구", "경기도광주시"처럼 시도+시군구로 붙여 친 경우 (가장 긴 시도 접두사 우선)
+  function localSearch(key) {
+    // "서울강북구", "경기도광주시"처럼 시도+시군구를 붙여 친 경우 (가장 긴 시도 접두사 우선)
     var scoped = null;
     Object.keys(sidoByKey).forEach(function (name) {
       if (key.length <= name.length || key.indexOf(name) !== 0) return;
@@ -259,22 +175,74 @@ window.WM = window.WM || {};
       }
     });
 
-    var items = [];
-    if (scoped) items = findSgg(scoped.rest, scoped.def);
-
-    // 2) 시도 이름 그대로 / 시군구 이름 그대로 (둘 다 모읍니다.
-    //    "광주시"는 광주광역시이면서 경기도 광주시이기도 하니까요.)
+    var items = scoped ? findSgg(scoped.rest, scoped.def) : [];
     if (!items.length) items = findSido(key).concat(findSgg(key, null));
-
-    // 3) 그래도 없으면 포함 검색
     if (!items.length) items = findLoose(key);
 
-    items = dedupe(items);
+    return dedupe(items).sort(function (a, b) {
+      return a.order - b.order || a.sub.localeCompare(b.sub, "ko");
+    });
+  }
+
+  /* ---- 오픈API 조회 ---- */
+
+  /** 통합 지자체처럼 법정동코드에 없는 곳은 내장 기준표로 먼저 처리합니다. */
+  function specialSido(key) {
+    var d = sidoByKey[key];
+    return d && d.displays.length > 1 ? [sidoItem(d)] : [];
+  }
+
+  function result(status, query, source, items, total) {
     return {
-      status: items.length ? "ok" : "notfound",
-      query: query,
-      source: source || "fallback",
-      items: items
+      status: status, query: query, source: source,
+      items: items || [], total: total == null ? (items ? items.length : 0) : total
     };
+  }
+
+  /**
+   * 지역명으로 시도·시군구·읍면동·리를 찾습니다.
+   * @param {string} raw 사용자가 입력한 지역명
+   * @returns {Promise<{status:string, query:string, source:string, items:Array, total:number}>}
+   *   status: "empty" | "notfound" | "ok",  source: "api" | "fallback"
+   */
+  WM.regionSearch = function (raw) {
+    var query = String(raw == null ? "" : raw).replace(/\s+/g, " ").trim();
+    if (!query) return Promise.resolve(result("empty", "", "api", []));
+
+    var key = normalize(query);
+    if (queryCache[key]) return Promise.resolve(queryCache[key]);
+
+    function remember(r) {
+      queryCache[key] = r;
+      return r;
+    }
+
+    // 1) 법정동코드에 없는 통합 지자체
+    var special = specialSido(key);
+    if (special.length) return Promise.resolve(remember(result("ok", query, "api", special)));
+
+    // 2) 줄임말은 공식 명칭으로 바꿔서 물어봅니다. (서울시 → 서울특별시)
+    var alias = sidoByKey[key];
+    var q = alias ? alias.name : query;
+
+    return fetch(ENDPOINT + "?q=" + encodeURIComponent(q), { headers: { Accept: "application/json" } })
+      .then(function (res) { return res.json().catch(function () { return null; }); })
+      .then(function (data) {
+        if (!data || !data.ok) {
+          if (data && data.hint) console.warn("법정동코드 오픈API:", data.error, "—", data.detail || "", data.hint);
+          throw new Error("오픈API를 쓸 수 없습니다.");
+        }
+        var items = dedupe((data.items || []).map(apiItem)).slice(0, MAX_SHOW);
+        if (items.length) return remember(result("ok", query, "api", items, data.total || items.length));
+        // 법정동코드에서 못 찾았으면 내장 표로 한 번 더 봅니다.
+        var local = localSearch(key);
+        if (local.length) return remember(result("ok", query, "fallback", local));
+        return remember(result("notfound", query, "api", []));
+      })
+      .catch(function () {
+        var items = localSearch(key);
+        // 실패는 캐시하지 않습니다. 키를 넣고 재배포하면 바로 오픈API로 넘어가야 하니까요.
+        return result(items.length ? "ok" : "notfound", query, "fallback", items);
+      });
   };
 })();
