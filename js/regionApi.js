@@ -122,34 +122,45 @@ window.WM = window.WM || {};
   }
 
   /** 지자체 목록을 준비합니다. 실패해도 reject하지 않고 내장 표로 채웁니다. */
+  /**
+   * 받아온 목록을 색인으로 채택합니다.
+   * 오픈API가 시도 단위만 내려주는 경우(시군구 칼럼이 없는 데이터)도 있어서,
+   * 시군구가 충분히 안 나오면 시군구만 내장 표로 채우고 "mixed"로 표시합니다.
+   * @returns "api" | "mixed" | null (쓸 수 없는 응답)
+   */
+  function adopt(regions) {
+    if (!regions || !regions.length) return null;
+    var built = toIndex(regions);
+    if (built.length >= 10) { index = built; return "api"; }
+    // 시도라도 알아볼 수 있으면 오픈API는 붙은 것으로 봅니다.
+    var hasSido = regions.some(function (r) { return !!sidoByKey[normalize(r.sido)]; });
+    if (!hasSido) return null;
+    index = fallbackIndex();
+    return "mixed";
+  }
+
   WM.loadRegions = function (force) {
     if (loaded && !force) return Promise.resolve({ source: source, count: index.length });
     if (loading && !force) return loading;
 
     if (!force) {
-      var cached = readCache();
-      if (cached) {
-        index = toIndex(cached);
-        if (index.length >= 10) {
-          source = "api";
-          loaded = true;
-          return Promise.resolve({ source: source, count: index.length });
-        }
+      var adopted = adopt(readCache());
+      if (adopted) {
+        source = adopted;
+        loaded = true;
+        return Promise.resolve({ source: source, count: index.length });
       }
     }
 
     loading = fetch(ENDPOINT, { headers: { Accept: "application/json" } })
       .then(function (res) { return res.json().catch(function () { return null; }); })
       .then(function (data) {
-        if (data && data.ok && data.regions && data.regions.length) {
-          var built = toIndex(data.regions);
-          if (built.length >= 10) {
-            index = built;
-            source = "api";
-            loaded = true;
-            writeCache(data.regions);
-            return { source: source, count: index.length };
-          }
+        var used = data && data.ok ? adopt(data.regions) : null;
+        if (used) {
+          source = used;
+          loaded = true;
+          writeCache(data.regions);
+          return { source: source, count: index.length };
         }
         if (data && data.hint) console.warn("지방자치단체 오픈API:", data.error, "—", data.hint);
         throw new Error("사용할 수 있는 목록이 없습니다.");

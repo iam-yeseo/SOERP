@@ -182,6 +182,7 @@ window.WM = window.WM || {};
 
   var SOURCE_NOTE = {
     api: "공공데이터포털 ‘행정안전부_통계연보_지방자치단체’ 자료 기준",
+    mixed: "시도는 공공데이터포털, 시군구는 내장 표 기준",
     fallback: "내장 지자체 표 기준 (오픈API 미연결)"
   };
 

@@ -19,11 +19,10 @@
    실패하면 502와 함께 { ok:false, error, hint, tried } 를 돌려줍니다.
    (프런트엔드는 실패 시 내장 표로 대신 조회하므로 화면이 멈추지는 않습니다.) */
 
-/* REGION_API_URL이 없을 때 시도해 볼 후보. 첫 번째로 시군구가 뽑히는 곳을 씁니다. */
+/* REGION_API_URL이 없을 때 쓰는 기본 주소.
+   '행정안전부_통계연보_지방자치단체'의 상세기능 '지방자치단체 통계 정보'입니다. */
 const DEFAULT_ENDPOINTS = [
-  "https://apis.data.go.kr/1741000/LocalGovernment/getLocalGovernment",
-  "https://apis.data.go.kr/1741000/StdgOrgnztSignguStats/getLocalGovernment",
-  "https://apis.data.go.kr/1741000/RegistrationOfLocalGovernment/getLocalGovernment"
+  "https://apis.data.go.kr/1741000/LocalGovernment/getLocalGovernment"
 ];
 
 const KEY_VARS = [
